@@ -44,8 +44,9 @@ class ProductService {
 
   Future<Map<String, dynamic>> getShippingFee(
       String token, int productId, int shippingAddressId) async {
-    final url = Uri.parse(
-        '${AppConfig.apiBaseUrl}/products/$productId/calculate-shipping');
+    // URL without query parameters
+    final url = Uri.parse('${AppConfig.apiBaseUrl}/orders/calculate-shipping');
+
     try {
       final response = await http.post(
         url,
@@ -54,19 +55,20 @@ class ProductService {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
+        // Send data in the Body
         body: json.encode({
           'shipping_address_id': shippingAddressId,
+          'product_ids': [productId], // Wrap single ID in list
         }),
       );
 
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
-        throw Exception('Failed to calculate shipping fee');
+        throw Exception('Failed to calculate shipping fee: ${response.body}');
       }
     } catch (e) {
       print("Get Shipping Fee Error: $e");
-      // Return a default fee structure on error to prevent crashes
       return {
         'shipping_fee': 1500.00,
         'estimated_delivery': '1-3 business days',

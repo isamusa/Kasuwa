@@ -37,9 +37,9 @@ class OrderDetailItem {
       imageUrl: images != null && images.isNotEmpty
           ? storageUrl(images[0]['image_url'])
           : 'https://placehold.co/400/purple/white?text=Kasuwa',
-      quantity: json['quantity'],
+      quantity: json['quantity'] ?? 1,
       price: NumberFormat.currency(locale: 'en_NG', symbol: '₦')
-          .format(double.parse(json['price'].toString())),
+          .format(double.tryParse(json['price'].toString()) ?? 0.0),
     );
   }
 }
@@ -58,16 +58,16 @@ class ShippingAddressDetail {
     return ShippingAddressDetail(
       recipientName: json['recipient_name'] ?? json['name'] ?? 'N/A',
       fullAddress:
-          '${json['address_line_1']}, ${json['city']}, ${json['state']}',
-      phoneNumber: json['recipient_phone'] ?? 'N/A', // Corrected key
+          '${json['address_line_1'] ?? ''}, ${json['city'] ?? ''}, ${json['state'] ?? ''}',
+      phoneNumber: json['recipient_phone'] ?? json['phone_number'] ?? 'N/A',
     );
   }
 }
 
 class OrderDetail {
-  final int id; // Added ID for API calls
+  final int id;
   final String orderNumber;
-  String status; // Made non-final to allow local updates
+  String status;
   String paymentStatus;
 
   final String date;
@@ -95,30 +95,51 @@ class OrderDetail {
   });
 
   factory OrderDetail.fromJson(Map<String, dynamic> json) {
-    final shippingAddressData = jsonDecode(json['shipping_address']);
-    final rawShippingFee = jsonDecode(json['shipping_fee']);
+    // 1. SAFE PARSING: Handle Shipping Address (String, Map, or Null)
+    Map<String, dynamic> shippingAddressData = {};
+    if (json['shipping_address'] != null) {
+      if (json['shipping_address'] is String) {
+        try {
+          shippingAddressData = jsonDecode(json['shipping_address']);
+        } catch (e) {
+          print("Error decoding shipping_address: $e");
+        }
+      } else if (json['shipping_address'] is Map) {
+        shippingAddressData =
+            Map<String, dynamic>.from(json['shipping_address']);
+      }
+    }
 
-    final rawTotalAmount = jsonDecode(json['total_amount']);
+    // 2. SAFE PARSING: Handle Numbers (String or num)
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      return double.tryParse(value.toString()) ?? 0.0;
+    }
 
+    final rawShippingFee = parseDouble(json['shipping_fee']);
+    final rawTotalAmount = parseDouble(json['total_amount']);
     final subtotal = rawTotalAmount - rawShippingFee;
 
     return OrderDetail(
-      id: json['id'],
-      orderNumber: json['order_number'],
-      status: json['status'],
+      id: json['id'] ?? 0,
+      orderNumber: json['order_number'] ?? 'N/A',
+      status: json['status'] ?? 'pending',
       paymentStatus: json['payment_status'] ?? 'pending_payment',
-      date:
-          DateFormat('d MMMM, yyyy').format(DateTime.parse(json['created_at'])),
-      items: (json['items'] as List<dynamic>)
-          .map((item) => OrderDetailItem.fromJson(item))
-          .toList(),
+      date: json['created_at'] != null
+          ? DateFormat('d MMMM, yyyy')
+              .format(DateTime.parse(json['created_at']))
+          : 'Unknown Date',
+      items: (json['items'] as List<dynamic>?)
+              ?.map((item) => OrderDetailItem.fromJson(item))
+              .toList() ??
+          [],
       shippingAddress: ShippingAddressDetail.fromJson(shippingAddressData),
       totalAmount: NumberFormat.currency(locale: 'en_NG', symbol: '₦')
-          .format(double.parse(json['total_amount'])),
+          .format(rawTotalAmount),
       shippingFee: NumberFormat.currency(locale: 'en_NG', symbol: '₦')
-          .format(double.parse(json['shipping_fee'])),
-      rawTotalAmount: double.parse(json['total_amount'].toString()),
-      rawShippingFee: double.parse(json['shipping_fee'].toString()),
+          .format(rawShippingFee),
+      rawTotalAmount: rawTotalAmount,
+      rawShippingFee: rawShippingFee,
       subtotal: subtotal,
     );
   }
@@ -134,14 +155,12 @@ class OrderDetailsProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _isRetryingPayment = false;
-  // Add a state variable to track the confirmation process
   bool _isConfirming = false;
 
   OrderDetail? get order => _order;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isRetryingPayment => _isRetryingPayment;
-
   bool get isConfirming => _isConfirming;
 
   OrderDetailsProvider(this._auth);
@@ -162,7 +181,11 @@ class OrderDetailsProvider with ChangeNotifier {
       _order = await _orderService.getOrderDetails(orderId, token);
     } catch (e) {
       _error = e.toString();
-      print("OrderDetailsProvider Error: $_error");
+      // Clean up error message for UI
+      if (_error!.contains("Exception:")) {
+        _error = _error!.replaceAll("Exception:", "").trim();
+      }
+      print("OrderDetailsProvider Error: $e");
     }
 
     _isLoading = false;
@@ -188,14 +211,16 @@ class OrderDetailsProvider with ChangeNotifier {
       return await _checkoutService.retryOrderPayment(
           orderId: _order!.id, token: _auth.token!);
     } catch (e) {
-      return {'success': false, 'message': 'An error occurred.'};
+      return {
+        'success': false,
+        'message': 'An error occurred connecting to payment.'
+      };
     } finally {
       _isRetryingPayment = false;
       notifyListeners();
     }
   }
 
-  // THE FIX: Add the method to handle confirming the delivery.
   Future<bool> confirmDelivery() async {
     if (_order == null || _isConfirming) return false;
 
@@ -206,15 +231,14 @@ class OrderDetailsProvider with ChangeNotifier {
     try {
       final token = _auth.token;
       if (token == null) throw Exception('Not authenticated');
-      // Assuming OrderDetailsService has this method from our previous implementation
+
       success = await _orderService.confirmOrderReceived(_order!.id, token);
       if (success) {
-        // Optimistically update the local state to reflect the change immediately
+        // Optimistically update status
         _order!.status = 'delivered';
       }
     } catch (e) {
       print('Error confirming delivery: $e');
-      // You could set an error message here if you want to display it in the UI
     }
 
     _isConfirming = false;

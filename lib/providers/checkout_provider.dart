@@ -66,17 +66,17 @@ class CheckoutProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  // Public Getters for new state
   double get shippingFee => _shippingFee;
   String get estimatedDelivery => _estimatedDelivery;
 
   CheckoutProvider(this._auth);
 
   void update(AuthProvider auth) {
-    if (auth.isAuthenticated && !_hasFetchedData) {}
+    // Optional: You could auto-fetch here if needed
   }
 
-  Future<void> fetchAddresses(List<CheckoutCartItem> items) async {
+  // FIX: Make items optional so other providers can call this just to get the address
+  Future<void> fetchAddresses({List<CheckoutCartItem>? items}) async {
     _isLoading = true;
     _hasFetchedData = true;
     notifyListeners();
@@ -85,10 +85,14 @@ class CheckoutProvider with ChangeNotifier {
       if (token == null) throw Exception('Not authenticated');
       _addresses = await _checkoutService.getShippingAddresses(token);
       if (_addresses.isNotEmpty) {
+        // Set default address
         _selectedAddress = _addresses.firstWhere((a) => a.isDefault,
             orElse: () => _addresses.first);
-        // After fetching addresses, immediately calculate the fee for the default address.
-        await calculateShippingFee(items);
+
+        // Only calculate fee if items were actually provided
+        if (items != null && items.isNotEmpty) {
+          await calculateShippingFee(items);
+        }
       }
       _error = null;
     } catch (e) {
@@ -99,7 +103,6 @@ class CheckoutProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Method to calculate the shipping fee.
   Future<void> calculateShippingFee(List<CheckoutCartItem> items) async {
     final token = _auth.token;
     if (token == null || _selectedAddress == null || items.isEmpty) return;
@@ -121,12 +124,10 @@ class CheckoutProvider with ChangeNotifier {
 
   void selectAddress(ShippingAddress address, List<CheckoutCartItem> items) {
     _selectedAddress = address;
-    // When a new address is selected, recalculate the shipping fee.
     calculateShippingFee(items);
     notifyListeners();
   }
 
-  // THE FIX: This new method implements the correct 2-step checkout flow.
   Future<Map<String, dynamic>> placeOrderAndInitializePayment(
       List<CheckoutCartItem> items) async {
     final token = _auth.token;
@@ -137,7 +138,6 @@ class CheckoutProvider with ChangeNotifier {
       return {'success': false, 'message': 'Please select a shipping address.'};
     }
 
-    // --- Step 1: Create the Order ---
     final itemsPayload = items
         .map((item) => {
               'product_id': item.productId,
@@ -156,7 +156,6 @@ class CheckoutProvider with ChangeNotifier {
       return {'success': false, 'message': 'Failed to create your order.'};
     }
 
-    // --- Step 2: Initialize Payment with the new Order ID ---
     return await _checkoutService.initializePayment(
       orderId: newOrderId,
       token: token,

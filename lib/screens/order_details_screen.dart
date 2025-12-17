@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:kasuwa/providers/order_details_provider.dart';
 import 'package:kasuwa/providers/auth_provider.dart';
-import 'package:kasuwa/screens/add_review_screen.dart'; // Import the review screen
+import 'package:kasuwa/providers/cart_provider.dart';
+import 'package:kasuwa/screens/cart_screen.dart';
+import 'package:kasuwa/screens/add_review_screen.dart';
+import 'package:kasuwa/screens/opay_payment_screen.dart';
+import 'package:kasuwa/screens/payment_success_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kasuwa/theme/app_theme.dart';
-import 'package:kasuwa/screens/opay_payment_screen.dart';
 
 class OrderDetailsScreen extends StatefulWidget {
   final int orderId;
@@ -24,58 +27,53 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     super.initState();
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     _provider = OrderDetailsProvider(authProvider);
-    // Fetch the latest details when the screen loads
     _provider.fetchOrderDetails(widget.orderId);
   }
 
-  Future<void> _handleRetryPayment(
-      BuildContext context, OrderDetailsProvider provider) async {
-    final result = await provider.retryPayment();
+  Future<void> _handleRetryPayment(BuildContext context) async {
+    final result = await _provider.retryPayment();
 
     if (!context.mounted) return;
 
     if (result['success']) {
-      final paymentResult = await Navigator.push<bool>(
+      final paymentSuccess = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
           builder: (_) => OpayPaymentScreen(checkoutUrl: result['url']!),
         ),
       );
-      // After returning from the payment screen, refresh the order details.
-      if (paymentResult == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Payment Successful! Updating order...'),
-              backgroundColor: Colors.green),
-        );
-        await provider.fetchOrderDetails(widget.orderId);
+
+      if (paymentSuccess == true && mounted) {
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => const PaymentSuccessScreen()));
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Error: ${result['message']}'),
-            backgroundColor: Colors.red),
+        SnackBar(content: Text(result['message']), backgroundColor: Colors.red),
       );
     }
   }
 
-  Future<void> _confirmDelivery(
-      BuildContext context, OrderDetailsProvider provider) async {
-    final success = await provider.confirmDelivery();
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Thank you for confirming!'),
-            backgroundColor: Colors.green),
-      );
-      // No navigation here, the state will update the button automatically
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Could not confirm delivery. Please try again.'),
-            backgroundColor: Colors.red),
-      );
+  Future<void> _handleReorder(BuildContext context, OrderDetail order) async {
+    final cartProvider = Provider.of<CartProvider>(context, listen: false);
+
+    // Show loading
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const Center(child: CircularProgressIndicator()));
+
+    // Add items to cart
+    for (var item in order.items) {
+      await cartProvider.addProductToCart(item.productId, item.quantity);
     }
+
+    if (!mounted) return;
+    Navigator.pop(context); // Close loading
+
+    // Go to Cart
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const CartScreen()));
   }
 
   @override
@@ -85,12 +83,18 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
       child: Consumer<OrderDetailsProvider>(
         builder: (context, provider, child) {
           return Scaffold(
+            backgroundColor: const Color(0xFFF9FAFB),
             appBar: AppBar(
-              title: const Text('Order Details'),
-              backgroundColor: AppTheme.primaryColor,
-              foregroundColor: Colors.white,
+              title: const Text('Order Details',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0.5,
             ),
-            body: _buildBody(provider),
+            body: RefreshIndicator(
+              onRefresh: () => provider.fetchOrderDetails(widget.orderId),
+              child: _buildBody(provider),
+            ),
             bottomNavigationBar: _buildBottomBar(context, provider),
           );
         },
@@ -99,325 +103,360 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   }
 
   Widget _buildBody(OrderDetailsProvider provider) {
-    if (provider.isLoading) {
+    if (provider.isLoading)
       return const Center(child: CircularProgressIndicator());
-    }
-    if (provider.error != null) {
-      return Center(child: Text('Error: ${provider.error}'));
-    }
-    if (provider.order == null) {
+    if (provider.error != null) return Center(child: Text(provider.error!));
+    if (provider.order == null)
       return const Center(child: Text('Order not found.'));
-    }
-    return _buildContent(provider.order!);
-  }
 
-  // THE FIX: This widget now conditionally displays the correct button based on order status.
-  Widget? _buildBottomBar(BuildContext context, OrderDetailsProvider provider) {
-    if (provider.order == null) return null;
-
-    final status = provider.order!.status.toLowerCase();
-    final paymentStatus = provider.order!.paymentStatus.toLowerCase();
-
-    // Condition 1: Show "Pay Now" button if payment is pending
-    if (paymentStatus == 'pending_payment' && status != 'cancelled') {
-      return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ElevatedButton(
-          onPressed: provider.isRetryingPayment
-              ? null
-              : () => _handleRetryPayment(context, provider),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.accentColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          child: provider.isRetryingPayment
-              ? const SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 3))
-              : const Text('Pay Now', style: TextStyle(fontSize: 16)),
-        ),
-      );
-    }
-
-    // Condition 1: Show "Confirm Order Received" button
-    if (['shipped', 'in_transit'].contains(status)) {
-      return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ElevatedButton(
-          onPressed: provider.isConfirming
-              ? null
-              : () => _confirmDelivery(context, provider),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primaryColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          child: provider.isConfirming
-              ? const SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 3))
-              : const Text('Confirm Order Received',
-                  style: TextStyle(fontSize: 16)),
-        ),
-      );
-    }
-
-    // Condition 2: Show "Write a Review" button
-    if (status == 'delivered') {
-      return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ElevatedButton(
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                // Navigate to the review screen, passing the order details
-                builder: (_) => AddReviewScreen(order: provider.order!),
-              ),
-            );
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor:
-                Colors.orange.shade800, // Different color for distinction
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          child: const Text('Write a Review', style: TextStyle(fontSize: 16)),
-        ),
-      );
-    }
-
-    // For any other status (pending, processing, etc.), show no button.
-    return null;
-  }
-
-  Widget _buildContent(OrderDetail order) {
-    final subtotal = order.rawTotalAmount - order.rawShippingFee;
-
-    return ListView(
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16.0),
-      children: [
-        _buildOrderSummaryHeader(order),
-        const SizedBox(height: 24),
-        _buildOrderStatusTracker(order.status),
-        const SizedBox(height: 24),
-        _buildSectionCard('Items Ordered', _buildItemsList(order.items)),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-            'Shipping Information', _buildShippingInfo(order.shippingAddress)),
-        const SizedBox(height: 16),
-        _buildSectionCard(
-            'Payment Summary',
-            _buildPaymentSummary(
-                order.totalAmount, order.shippingFee, subtotal)),
-      ],
-    );
-  }
-
-  Widget _buildOrderSummaryHeader(OrderDetail order) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(order.orderNumber,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text('Placed on ${order.date}',
-            style: TextStyle(color: Colors.grey[700])),
-      ],
-    );
-  }
-
-  Widget _buildOrderStatusTracker(String currentStatus) {
-    final statuses = [
-      'Pending',
-      'Processing',
-      'Shipped',
-      'In Transit',
-      'Delivered',
-      'Completed'
-    ];
-    int currentIndex = statuses
-        .indexWhere((s) => s.toLowerCase() == currentStatus.toLowerCase());
-    if (currentIndex == -1) currentIndex = 0;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Order Status',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 80,
-          child: Row(
-            children: List.generate(statuses.length, (index) {
-              final isCompleted = index <= currentIndex;
-              final isLast = index == statuses.length - 1;
-
-              return Expanded(
-                child: Row(
-                  children: [
-                    Column(
-                      children: [
-                        Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color:
-                                isCompleted ? Colors.green : Colors.grey[300],
-                            border: Border.all(
-                                color: isCompleted
-                                    ? Colors.green
-                                    : Colors.grey[400]!),
-                          ),
-                          child: isCompleted
-                              ? const Icon(Icons.check,
-                                  color: Colors.white, size: 16)
-                              : null,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          statuses[index],
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: isCompleted
-                                  ? FontWeight.bold
-                                  : FontWeight.normal),
-                          textAlign: TextAlign.center,
-                        )
-                      ],
-                    ),
-                    if (!isLast)
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 24.0),
-                          child: Divider(
-                            thickness: 2,
-                            color:
-                                isCompleted ? Colors.green : Colors.grey[300],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            }),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSectionCard(String title, Widget content) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const Divider(height: 24),
-            content,
-          ],
-        ),
+      child: Column(
+        children: [
+          _buildOrderHeader(provider.order!),
+          const SizedBox(height: 20),
+          _buildStatusStepper(provider.order!.status),
+          const SizedBox(height: 20),
+          _buildSection("Items Ordered", _buildItemsList(provider.order!)),
+          const SizedBox(height: 16),
+          _buildSection("Delivery Info", _buildShippingInfo(provider.order!)),
+          const SizedBox(height: 16),
+          _buildPaymentReceipt(provider.order!),
+          const SizedBox(height: 30),
+        ],
       ),
     );
   }
 
-  Widget _buildItemsList(List<OrderDetailItem> items) {
-    return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return Row(
-          children: [
-            ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
-                  imageUrl: item.imageUrl,
-                  width: 60,
-                  height: 60,
-                  fit: BoxFit.cover,
-                  errorWidget: (c, u, e) => Container(
-                      width: 60,
-                      height: 60,
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.error)),
-                )),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.productName,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Qty: ${item.quantity}'),
-                ],
-              ),
-            ),
-            Text(item.price),
-          ],
-        );
-      },
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
+  Widget _buildOrderHeader(OrderDetail order) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: AppTheme.primaryColor,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+                color: AppTheme.primaryColor.withOpacity(0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 5))
+          ]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Order #${order.orderNumber}",
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text("Placed on ${order.date}",
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.9), fontSize: 13)),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20)),
+            child: Text(order.paymentStatus.toUpperCase().replaceAll('_', ' '),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold)),
+          )
+        ],
+      ),
     );
   }
 
-  Widget _buildShippingInfo(ShippingAddressDetail address) {
+  Widget _buildStatusStepper(String status) {
+    final steps = ['pending', 'processing', 'shipped', 'delivered'];
+    int activeIndex = steps.indexOf(status.toLowerCase());
+    if (activeIndex == -1 && status == 'in_transit') activeIndex = 2;
+    if (status == 'cancelled') return _buildCancelledStatus();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+      decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: List.generate(steps.length, (index) {
+          final isActive = index <= activeIndex;
+          return Expanded(
+            child: Column(
+              children: [
+                Icon(_getStatusIcon(steps[index]),
+                    color: isActive ? Colors.green : Colors.grey[300],
+                    size: 24),
+                const SizedBox(height: 4),
+                Text(steps[index].capitalize(),
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: isActive ? Colors.black : Colors.grey,
+                        fontWeight:
+                            isActive ? FontWeight.bold : FontWeight.normal))
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildCancelledStatus() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: Colors.red[50], borderRadius: BorderRadius.circular(12)),
+      child: const Row(
+        children: [
+          Icon(Icons.cancel, color: Colors.red),
+          SizedBox(width: 12),
+          Text("This order was cancelled",
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status) {
+      case 'pending':
+        return Icons.receipt_long;
+      case 'processing':
+        return Icons.inventory_2;
+      case 'shipped':
+        return Icons.local_shipping;
+      case 'delivered':
+        return Icons.check_circle;
+      default:
+        return Icons.circle;
+    }
+  }
+
+  Widget _buildSection(String title, Widget content) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(address.recipientName,
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(address.fullAddress, style: TextStyle(color: Colors.grey[800])),
-        const SizedBox(height: 4),
-        Text(address.phoneNumber, style: TextStyle(color: Colors.grey[800])),
-      ],
-    );
-  }
-
-  Widget _buildPaymentSummary(
-      String totalAmount, String shippingFee, double subTotal) {
-    return Column(
-      children: [
-        Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [const Text('Subtotal'), Text(subTotal.toString())]),
-        const SizedBox(height: 8),
-        Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [const Text('Shipping Fee'), Text(shippingFee)]),
-        const Divider(height: 24),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('Total Amount',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            Text(totalAmount,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: AppTheme.primaryColor)),
-          ],
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(title,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+              color: Colors.white, borderRadius: BorderRadius.circular(12)),
+          child: content,
         ),
       ],
     );
   }
+
+  Widget _buildItemsList(OrderDetail order) {
+    return Column(
+      children: order.items.map((item) {
+        return Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: item.imageUrl,
+                  height: 60,
+                  width: 60,
+                  fit: BoxFit.cover,
+                  errorWidget: (c, u, e) =>
+                      Container(color: Colors.grey[200], height: 60, width: 60),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.productName,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Text("Qty: ${item.quantity}  x  ${item.price}",
+                        style:
+                            TextStyle(color: Colors.grey[600], fontSize: 13)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildShippingInfo(OrderDetail order) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.location_on_outlined, color: Colors.grey),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(order.shippingAddress.recipientName,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(order.shippingAddress.fullAddress,
+                    style: TextStyle(color: Colors.grey[700], height: 1.4)),
+                const SizedBox(height: 4),
+                Text(order.shippingAddress.phoneNumber,
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentReceipt(OrderDetail order) {
+    final currency =
+        NumberFormat.currency(locale: 'en_NG', symbol: '₦', decimalDigits: 0);
+    return _buildSection(
+        "Payment Summary",
+        Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            children: [
+              _row("Subtotal", currency.format(order.subtotal)),
+              const SizedBox(height: 12),
+              _row("Shipping Fee", order.shippingFee),
+              const SizedBox(height: 16),
+              const Divider(
+                  color: Colors.grey,
+                  thickness: 1.0), // You can implement a custom dashed divider
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("Total Paid",
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text(order.totalAmount,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: AppTheme.primaryColor)),
+                ],
+              )
+            ],
+          ),
+        ));
+  }
+
+  Widget _row(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(color: Colors.grey[600])),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+
+  Widget? _buildBottomBar(BuildContext context, OrderDetailsProvider provider) {
+    if (provider.order == null) return null;
+    final status = provider.order!.status.toLowerCase();
+    final payment = provider.order!.paymentStatus.toLowerCase();
+
+    // 1. RE-ORDER (Cancelled)
+    if (status == 'cancelled') {
+      return _bottomBtn(
+        label: "Re-order Items",
+        icon: Icons.refresh,
+        color: Colors.black87,
+        onPressed: () => _handleReorder(context, provider.order!),
+      );
+    }
+
+    // 2. PAY NOW (Pending)
+    if (payment == 'pending_payment') {
+      return _bottomBtn(
+        label: "Complete Payment",
+        icon: Icons.lock,
+        color: AppTheme.primaryColor,
+        isLoading: provider.isRetryingPayment,
+        onPressed: () => _handleRetryPayment(context),
+      );
+    }
+
+    // 3. CONFIRM DELIVERY (Shipped)
+    if (['shipped', 'in_transit'].contains(status)) {
+      return _bottomBtn(
+        label: "Confirm Received",
+        icon: Icons.check_circle_outline,
+        color: Colors.green[700]!,
+        isLoading: provider.isConfirming,
+        onPressed: () => provider.confirmDelivery(),
+      );
+    }
+
+    // 4. REVIEW (Delivered)
+    if (status == 'delivered') {
+      return _bottomBtn(
+        label: "Write Review",
+        icon: Icons.star_rate_rounded,
+        color: Colors.amber[800]!,
+        onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => AddReviewScreen(order: provider.order!))),
+      );
+    }
+
+    return null;
+  }
+
+  Widget _bottomBtn(
+      {required String label,
+      required IconData icon,
+      required Color color,
+      required VoidCallback onPressed,
+      bool isLoading = false}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: Colors.white,
+      child: SafeArea(
+        child: ElevatedButton.icon(
+          onPressed: isLoading ? null : onPressed,
+          icon: isLoading ? const SizedBox() : Icon(icon, color: Colors.white),
+          label: isLoading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2))
+              : Text(label,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: color,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              elevation: 0),
+        ),
+      ),
+    );
+  }
+}
+
+extension StringExtension on String {
+  String capitalize() => "${this[0].toUpperCase()}${substring(1)}";
 }

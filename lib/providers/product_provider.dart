@@ -12,86 +12,113 @@ class ProductProvider with ChangeNotifier {
 
   ProductDetail? _product;
   bool _isLoadingPage = false;
+  bool _isBackgroundLoading = false;
   String? _error;
 
   double? _shippingFee;
   String? _estimatedDelivery;
 
-  // State management for user selections ---
   Map<int, int> _selectedOptions = {};
   ProductVariant? _selectedVariant;
   int _quantity = 1;
 
-  // Public getters to access state from the UI
   ProductDetail? get product => _product;
   bool get isLoading => _isLoadingPage;
+  bool get isBackgroundLoading => _isBackgroundLoading;
   String? get error => _error;
 
-  bool _isFetchingDetails = false;
   ProductVariant? get selectedVariant => _selectedVariant;
   int get quantity => _quantity;
   Map<int, int> get selectedOptions => _selectedOptions;
   double? get shippingFee => _shippingFee;
   String? get estimatedDelivery => _estimatedDelivery;
-  // Get the default address directly from the CheckoutProvider
   ShippingAddress? get defaultAddress => _checkout.selectedAddress;
 
   ProductProvider(this._auth, this._checkout);
 
-  // Getter to determine if the buttons should be enabled
-  bool get canAddToCart {
-    if (_product == null) return false;
-    // For simple products, check base stock
+  // FIX 1: New helper to determine the real maximum stock allowed
+  int get maxStock {
+    if (_product == null) return 0;
+
+    // Case A: Simple Product (No attributes)
     if (_product!.attributes.isEmpty) {
-      return (_product!.stockQuantity ?? 0) > 0;
+      return _product!.stockQuantity ?? 0;
     }
-    // For products with variants, check selected variant stock
-    return _selectedVariant != null && _selectedVariant!.stockQuantity > 0;
+
+    // Case B: Variable Product (Has attributes)
+    // If no variant is selected yet, user can't buy, so max is 0
+    return _selectedVariant?.stockQuantity ?? 0;
   }
 
-  void update(AuthProvider auth, CheckoutProvider checkout) {
-    // No specific update logic needed here for now, but the structure is in place.
+  bool get canAddToCart {
+    if (_isBackgroundLoading) return false;
+    // We can simply check if we have stock available to add
+    return maxStock > 0;
   }
+
+  // ... (fetchProductDetails and getShippingFee remain exactly the same) ...
+  // [Paste the fetchProductDetails and getShippingFee code from previous step here if re-copying file]
+  void update(AuthProvider auth, CheckoutProvider checkout) {}
 
   Future<void> fetchProductDetails(int productId,
       {HomeProduct? initialData}) async {
-    _isLoadingPage = true;
+    // ... (Keep existing implementation) ...
+    if (initialData != null) {
+      _product = ProductDetail.fromHomeProduct(initialData);
+      _isLoadingPage = false;
+      _isBackgroundLoading = true;
+    } else {
+      _isLoadingPage = true;
+      _isBackgroundLoading = false;
+    }
+    _error = null;
     notifyListeners();
 
     try {
-      final detailedProduct =
-          await _productService.getProductDetails(productId);
-      _product = detailedProduct;
-      _isFetchingDetails = true;
-      // If it's a simple product, set its default variant automatically
-      if (_product != null &&
-          _product!.attributes.isEmpty &&
-          _product!.variants.isNotEmpty) {
-        _selectedVariant = _product!.variants.first;
-      }
-      if (_auth.isAuthenticated) {
-        // We can get the default address from the CheckoutProvider, which is already loaded.
-        if (_checkout.selectedAddress != null) {
-          await getShippingFee(productId, _checkout.selectedAddress!.id);
+      final List<Future> tasks = [];
+      tasks.add(
+          _productService.getProductDetails(productId).then((detailedProduct) {
+        _product = detailedProduct;
+        if (_product != null &&
+            _product!.attributes.isEmpty &&
+            _product!.variants.isNotEmpty) {
+          _selectedVariant = _product!.variants.first;
         }
-      }
-    } catch (e) {
-      _error = "An error occurred while loading the product.";
-    }
+        notifyListeners();
+      }));
 
-    _isLoadingPage = false;
-    _isFetchingDetails = false;
-    notifyListeners();
+      if (_auth.isAuthenticated) {
+        tasks.add(() async {
+          if (_checkout.selectedAddress == null) {
+            await _checkout.fetchAddresses(items: []);
+          }
+          if (_checkout.selectedAddress != null) {
+            await getShippingFee(productId, _checkout.selectedAddress!.id);
+          }
+        }());
+      }
+      await Future.wait(tasks);
+    } catch (e) {
+      if (_product == null)
+        _error = "An error occurred while loading the product.";
+      print("Product Fetch Error: $e");
+    } finally {
+      _isLoadingPage = false;
+      _isBackgroundLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> getShippingFee(int productId, int addressId) async {
+    // ... (Keep existing implementation) ...
     final token = _auth.token;
     if (token == null) return;
-
     try {
+      _shippingFee = null;
+      notifyListeners();
       final result =
           await _productService.getShippingFee(token, productId, addressId);
-      _shippingFee = result['shipping_fee'];
+      _shippingFee = double.tryParse(result['shipping_fee'].toString());
       _estimatedDelivery = result['estimated_delivery'];
     } catch (e) {
       _shippingFee = null;
@@ -100,10 +127,15 @@ class ProductProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- NEW: Methods to update state from the UI ---
+  // FIX 2: Update setQuantity to respect maxStock
   void setQuantity(int newQuantity) {
-    if (newQuantity > 0) {
+    if (newQuantity > 0 && newQuantity <= maxStock) {
       _quantity = newQuantity;
+      notifyListeners();
+    } else if (newQuantity > maxStock) {
+      // Optional: Shake UI or show message?
+      // For now, we just clamp it silently or do nothing.
+      _quantity = maxStock;
       notifyListeners();
     }
   }
@@ -121,6 +153,11 @@ class ProductProvider with ChangeNotifier {
   void _updateSelectedVariant() {
     if (_product == null || _product!.attributes.isEmpty) {
       _selectedVariant = _product?.variants.first;
+      // FIX 3: Reset quantity if it exceeds new variant's stock
+      if (_selectedVariant != null &&
+          _quantity > _selectedVariant!.stockQuantity) {
+        _quantity = 1;
+      }
       return;
     }
 
@@ -130,15 +167,25 @@ class ProductProvider with ChangeNotifier {
     }
 
     final selectedOptionIds = _selectedOptions.values.toSet();
+    bool found = false;
     for (var variant in _product!.variants) {
       final variantOptionIds =
           variant.attributeOptions.map((opt) => opt.id).toSet();
       if (variantOptionIds.length == selectedOptionIds.length &&
           variantOptionIds.every(selectedOptionIds.contains)) {
         _selectedVariant = variant;
-        return;
+        found = true;
+        break;
       }
     }
-    _selectedVariant = null;
+
+    if (!found) {
+      _selectedVariant = null;
+    } else {
+      // FIX 3: Reset quantity if it exceeds new variant's stock
+      if (_quantity > _selectedVariant!.stockQuantity) {
+        _quantity = 1;
+      }
+    }
   }
 }

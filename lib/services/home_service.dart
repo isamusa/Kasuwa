@@ -56,10 +56,16 @@ class HomeService {
   Future<Map<String, dynamic>> getProducts({required int page}) async {
     final url = Uri.parse('${AppConfig.apiBaseUrl}/products?page=$page');
     try {
+      print("Fetching: $url"); // Debug: See URL being hit
       final response =
           await http.get(url, headers: {'Accept': 'application/json'});
 
+      print("Response Code: ${response.statusCode}"); // Debug: See status code
+
       if (response.statusCode == 200) {
+        // Debug: Check what the server actually sent
+        // print("Response Body: ${response.body}");
+
         final data = json.decode(response.body);
         final List<HomeProduct> products =
             (data['data'] as List).map((p) => HomeProduct.fromJson(p)).toList();
@@ -67,10 +73,12 @@ class HomeService {
 
         return {'products': products, 'has_more': hasMore};
       } else {
+        print("Server Error Body: ${response.body}"); // Debug info
         throw Exception('Failed to load products page $page');
       }
-    } catch (e) {
-      log("HomeService getProducts error: $e");
+    } catch (e, stackTrace) {
+      print("CRITICAL ERROR in getProducts: $e");
+      print(stackTrace); // This will tell us EXACTLY where it failed
       throw Exception('Failed to fetch products from network.');
     }
   }

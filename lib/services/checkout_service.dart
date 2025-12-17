@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:kasuwa/config/app_config.dart';
 import 'package:kasuwa/providers/checkout_provider.dart'; // For ShippingAddress model
+import 'dart:developer';
 
 // Service dedicated to handling checkout-related API calls
 class CheckoutService {
@@ -66,7 +67,9 @@ class CheckoutService {
   Future<Map<String, dynamic>> getShippingFee(
       String token, int shippingAddressId, List<int> productIds) async {
     final url = Uri.parse('${AppConfig.apiBaseUrl}/orders/calculate-shipping');
+
     try {
+      // Revert to POST
       final response = await http.post(
         url,
         headers: {
@@ -83,11 +86,10 @@ class CheckoutService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
-        throw Exception('Failed to calculate shipping fee');
+        throw Exception('Failed to calculate shipping fee: ${response.body}');
       }
     } catch (e) {
       print("Get Shipping Fee Error: $e");
-      // Return a default fee structure on error to prevent crashes
       return {
         'shipping_fee': 1500.00,
         'estimated_delivery': '1-3 business days',
