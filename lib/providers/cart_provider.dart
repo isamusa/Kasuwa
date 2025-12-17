@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:kasuwa/providers/checkout_provider.dart';
 import 'package:kasuwa/services/cart_service.dart';
 import 'package:kasuwa/config/app_config.dart';
 import 'package:kasuwa/providers/auth_provider.dart';
+import 'package:kasuwa/screens/checkout_screen.dart'; // Required for CheckoutCartItem
 
 String storageUrl(String? path) {
   if (path == null || path.isEmpty) return '';
+  if (path.startsWith('http')) return path;
   return '${AppConfig.fileBaseUrl}/$path';
 }
 
@@ -28,20 +31,25 @@ class CartItem {
     this.variantDescription,
   });
 
+  // Getter alias to match UI code if it uses 'productImage'
+  String get productImage => imageUrl;
+
   factory CartItem.fromJson(Map<String, dynamic> json) {
     final product = json['product'] ?? {};
     final images = product['images'] as List<dynamic>?;
-    final imageUrl = images != null && images.isNotEmpty
-        ? storageUrl(images[0]['image_url'])
-        : 'https://placehold.co/400/purple/white?text=Kasuwa';
 
-    // THE FIX: Get price from variant if it exists, otherwise from product
+    String imgUrl = 'https://placehold.co/400/purple/white?text=Kasuwa';
+    if (images != null && images.isNotEmpty) {
+      imgUrl = storageUrl(images[0]['image_url']);
+    }
+
+    // Logic: Get price from variant if it exists, otherwise from product
     final variant = json['variant'];
     final priceString = (variant?['sale_price'] ?? variant?['price']) ??
         (product['sale_price'] ?? product['price'])?.toString() ??
         '0.0';
 
-    // THE FIX: Build variant description from variant if it exists
+    // Logic: Build variant description
     String? variantDesc;
     if (variant != null && variant['attribute_options'] != null) {
       final options = (variant['attribute_options'] as List)
@@ -54,15 +62,14 @@ class CartItem {
       id: json['id'],
       productId: product['id'],
       productName: product['name'] ?? 'No Name',
-      price: double.tryParse(priceString) ?? 0.0,
-      quantity: json['quantity'],
-      imageUrl: imageUrl,
+      price: double.tryParse(priceString.toString()) ?? 0.0,
+      quantity: int.tryParse(json['quantity'].toString()) ?? 1,
+      imageUrl: imgUrl,
       variantDescription: variantDesc,
     );
   }
 }
 
-// The Enhanced Cart Provider
 class CartProvider with ChangeNotifier {
   final CartService _cartService = CartService();
   final AuthProvider _auth;
@@ -71,29 +78,30 @@ class CartProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _hasFetchedData = false;
-  Set<int> _selectedItemIds = {};
-  int? _updatingItemId;
 
   // Public Getters
   List<CartItem> get items => _items;
   int get itemCount => _items.fold(0, (sum, item) => sum + item.quantity);
   bool get isLoading => _isLoading;
   String? get error => _error;
-  Set<int> get selectedItemIds => _selectedItemIds;
-  int? get updatingItemId => _updatingItemId;
 
-  List<CartItem> get selectedItems {
-    return _items.where((item) => _selectedItemIds.contains(item.id)).toList();
+  // Total Price for UI
+  double get totalPrice {
+    return _items.fold(0.0, (sum, item) => sum + (item.price * item.quantity));
   }
 
-  double get selectedItemsTotalPrice {
-    return selectedItems.fold(
-        0.0, (sum, item) => sum + (item.price * item.quantity));
-  }
-
-  bool get areAllItemsSelected {
-    if (_items.isEmpty) return false;
-    return _selectedItemIds.length == _items.length;
+  // Convert to Checkout Format
+  List<CheckoutCartItem> get checkoutItems {
+    return _items
+        .map((item) => CheckoutCartItem(
+              productId: item.productId,
+              name: item.productName,
+              imageUrl: item.imageUrl,
+              price: item.price,
+              quantity: item.quantity,
+              variantDescription: item.variantDescription,
+            ))
+        .toList();
   }
 
   CartProvider(this._auth);
@@ -102,8 +110,9 @@ class CartProvider with ChangeNotifier {
     if (auth.isAuthenticated && !_hasFetchedData) {
       fetchCart();
     }
+    // If user logs out, clear cart
     if (!auth.isAuthenticated && _hasFetchedData) {
-      clear();
+      clearLocal();
     }
   }
 
@@ -114,84 +123,106 @@ class CartProvider with ChangeNotifier {
     try {
       final cartData = await _cartService.getCart(_auth.token);
       _items = cartData.map((itemData) => CartItem.fromJson(itemData)).toList();
-      _selectedItemIds.clear();
       _error = null;
     } catch (e) {
       _error = e.toString();
+      // Keep old items on error or empty? Usually better to keep old or show error
     }
     _isLoading = false;
     notifyListeners();
   }
 
-  // Method for products WITH variants
+  // --- Add to Cart Methods ---
+
   Future<void> addVariantToCart(int variantId, int quantity) async {
+    // Optimistic Update (Optional) or just wait for server
     final success = await _cartService.addVariantToCart(
         variantId: variantId, quantity: quantity, token: _auth.token);
     if (success) {
-      await fetchCart(); // Refresh cart from server
+      await fetchCart();
     }
   }
 
-  // THE FIX: Add new method for simple products
   Future<void> addProductToCart(int productId, int quantity) async {
     final success = await _cartService.addProductToCart(
         productId: productId, quantity: quantity, token: _auth.token);
     if (success) {
-      await fetchCart(); // Refresh cart from server
+      await fetchCart();
     }
   }
 
-  Future<void> updateQuantity(int cartItemId, int quantity) async {
+  // --- Modification Methods matching UI aliases ---
+
+  Future<void> updateCartItemQuantity(int cartItemId, int quantity) async {
     if (quantity < 1) {
-      await removeItem(cartItemId);
+      await removeCartItem(cartItemId);
       return;
     }
-    _updatingItemId = cartItemId;
-    notifyListeners();
 
+    // 1. Optimistic Update
+    final index = _items.indexWhere((item) => item.id == cartItemId);
+    int oldQuantity = 0;
+    if (index != -1) {
+      oldQuantity = _items[index].quantity;
+      _items[index].quantity = quantity;
+      notifyListeners(); // Immediate UI update
+    }
+
+    // 2. Server Call
     final success =
         await _cartService.updateQuantity(cartItemId, quantity, _auth.token);
-    if (success) {
-      final index = _items.indexWhere((item) => item.id == cartItemId);
-      if (index != -1) {
-        _items[index].quantity = quantity;
-      }
+
+    // 3. Rollback if failed
+    if (!success && index != -1) {
+      _items[index].quantity = oldQuantity;
+      notifyListeners();
+    } else if (success) {
+      // Optional: fetchCart() to be perfectly synced, or trust the optimistic update
     }
-    _updatingItemId = null;
-    notifyListeners();
   }
 
-  Future<void> removeItem(int cartItemId) async {
+  Future<void> removeCartItem(int cartItemId) async {
+    // 1. Optimistic Remove
+    final existingIndex = _items.indexWhere((i) => i.id == cartItemId);
+    CartItem? removedItem;
+    if (existingIndex != -1) {
+      removedItem = _items[existingIndex];
+      _items.removeAt(existingIndex);
+      notifyListeners();
+    }
+
+    // 2. Server Call
     final success = await _cartService.removeItem(cartItemId, _auth.token);
-    if (success) {
-      _items.removeWhere((item) => item.id == cartItemId);
-      _selectedItemIds.remove(cartItemId);
+
+    // 3. Rollback
+    if (!success && removedItem != null) {
+      _items.insert(existingIndex, removedItem);
       notifyListeners();
     }
   }
 
-  void toggleItemSelected(int cartItemId) {
-    if (_selectedItemIds.contains(cartItemId)) {
-      _selectedItemIds.remove(cartItemId);
-    } else {
-      _selectedItemIds.add(cartItemId);
-    }
+  Future<void> clearCart() async {
+    // 1. Optimistic Clear
+    final oldItems = List<CartItem>.from(_items);
+    _items.clear();
     notifyListeners();
+
+    // 2. Server Call (Assuming service has this method, if not, remove one by one or ignore)
+    // If your API doesn't have a 'clear' endpoint, you might need to loop remove
+    // For now, we assume simple local clear or implementation needed in service.
+    // If strictly no endpoint, we might just clear local state.
+
+    // Example loop remove if no endpoint:
+    /*
+    for (var item in oldItems) {
+      await _cartService.removeItem(item.id, _auth.token);
+    }
+    */
   }
 
-  void toggleSelectAll(bool select) {
-    if (select) {
-      _selectedItemIds = _items.map((item) => item.id).toSet();
-    } else {
-      _selectedItemIds.clear();
-    }
-    notifyListeners();
-  }
-
-  void clear() {
+  void clearLocal() {
     _items = [];
     _hasFetchedData = false;
-    _selectedItemIds.clear();
     _error = null;
     notifyListeners();
   }

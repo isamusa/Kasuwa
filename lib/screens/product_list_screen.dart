@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:kasuwa/config/app_config.dart';
-import 'package:kasuwa/providers/home_provider.dart'; // Re-using HomeProduct model
-import 'package:kasuwa/screens/home_screen.dart'; // Re-using ModernProductCard
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:kasuwa/config/app_config.dart';
+import 'package:kasuwa/theme/app_theme.dart';
+import 'package:kasuwa/providers/home_provider.dart'; // Imports HomeProduct model
+import 'package:kasuwa/screens/home_screen.dart'; // Imports ModernProductCard
 
-// --- Service to fetch products by category ---
+// --- 1. Service: Fetch Products by Category ---
 class ProductListService {
   Future<Map<String, dynamic>> getProductsByCategory(
       {required int categoryId, required int page}) async {
@@ -16,31 +17,38 @@ class ProductListService {
     try {
       final response =
           await http.get(url, headers: {'Accept': 'application/json'});
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        // Handle Laravel Pagination Structure
+        final List<dynamic> productList = data['data'] ?? [];
         final List<HomeProduct> products =
-            (data['data'] as List).map((p) => HomeProduct.fromJson(p)).toList();
+            productList.map((p) => HomeProduct.fromJson(p)).toList();
+
+        // Check for 'next_page_url' to determine if more pages exist
         final bool hasMore = data['next_page_url'] != null;
+
         return {'products': products, 'has_more': hasMore};
       } else {
-        throw Exception('Failed to load products for this category');
+        throw Exception('Failed to load products');
       }
     } catch (e) {
-      throw Exception('An error occurred: $e');
+      throw Exception('Network error: $e');
     }
   }
 }
 
-// --- Provider for this screen's state ---
+// --- 2. Provider: State Management for this Screen ---
 class ProductListProvider with ChangeNotifier {
   final ProductListService _service = ProductListService();
   final int categoryId;
 
   List<HomeProduct> _products = [];
-  bool _isLoading = false;
+  bool _isLoading = true;
   bool _isFetchingMore = false;
   bool _hasMore = true;
   int _currentPage = 1;
+  String? _errorMessage;
 
   ProductListProvider({required this.categoryId}) {
     fetchInitialProducts();
@@ -49,9 +57,11 @@ class ProductListProvider with ChangeNotifier {
   List<HomeProduct> get products => _products;
   bool get isLoading => _isLoading;
   bool get isFetchingMore => _isFetchingMore;
+  String? get errorMessage => _errorMessage;
 
   Future<void> fetchInitialProducts() async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
     try {
       final result =
@@ -59,10 +69,11 @@ class ProductListProvider with ChangeNotifier {
       _products = result['products'];
       _hasMore = result['has_more'];
     } catch (e) {
-      print(e);
+      _errorMessage = "Could not load products. Please check your connection.";
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-    _isLoading = false;
-    notifyListeners();
   }
 
   Future<void> fetchMoreProducts() async {
@@ -77,16 +88,15 @@ class ProductListProvider with ChangeNotifier {
       _products.addAll(result['products']);
       _hasMore = result['has_more'];
     } catch (e) {
-      print(e);
-      _currentPage--; // Revert on error
+      _currentPage--; // Revert page on error
+    } finally {
+      _isFetchingMore = false;
+      notifyListeners();
     }
-
-    _isFetchingMore = false;
-    notifyListeners();
   }
 }
 
-// --- The UI Screen ---
+// --- 3. The UI Screen ---
 class ProductListScreen extends StatelessWidget {
   final int categoryId;
   final String categoryName;
@@ -96,99 +106,155 @@ class ProductListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Use a ChangeNotifierProvider to create a new instance of the provider for this screen
     return ChangeNotifierProvider(
       create: (_) => ProductListProvider(categoryId: categoryId),
-      child: Consumer<ProductListProvider>(
-        builder: (context, provider, child) {
-          return Scaffold(
-            appBar: AppBar(title: Text(categoryName)),
-            body: _buildBody(context, provider),
-          );
-        },
+      child: Scaffold(
+        backgroundColor: AppTheme.backgroundColor,
+        body: Consumer<ProductListProvider>(
+          builder: (context, provider, child) {
+            return RefreshIndicator(
+              onRefresh: () => provider.fetchInitialProducts(),
+              color: AppTheme.primaryColor,
+              child: CustomScrollView(
+                controller: _ScrollControllerWrapper(provider),
+                slivers: [
+                  // App Bar
+                  SliverAppBar(
+                    floating: true,
+                    pinned: true,
+                    title: Text(categoryName,
+                        style: TextStyle(color: AppTheme.textPrimary)),
+                    backgroundColor: Colors.white,
+                    elevation: 0,
+                    iconTheme: IconThemeData(color: AppTheme.textPrimary),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.filter_list),
+                        onPressed: () {
+                          // TODO: Implement Filter Modal
+                        },
+                      )
+                    ],
+                  ),
+
+                  // Error State
+                  if (provider.errorMessage != null)
+                    SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.wifi_off, size: 50, color: Colors.grey),
+                            SizedBox(height: 10),
+                            Text(provider.errorMessage!),
+                            TextButton(
+                              onPressed: provider.fetchInitialProducts,
+                              child: Text("Retry"),
+                            )
+                          ],
+                        ),
+                      ),
+                    )
+                  // Loading State
+                  else if (provider.isLoading)
+                    _buildLoadingSliver()
+                  // Empty State
+                  else if (provider.products.isEmpty)
+                    SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.shopping_bag_outlined,
+                                size: 60, color: Colors.grey[300]),
+                            SizedBox(height: 16),
+                            Text("No products found in this category",
+                                style: TextStyle(color: Colors.grey[600])),
+                          ],
+                        ),
+                      ),
+                    )
+                  // Product Grid
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.all(16),
+                      sliver: SliverGrid(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          childAspectRatio: 0.7,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            return ModernProductCard(
+                                product: provider.products[index]);
+                          },
+                          childCount: provider.products.length,
+                        ),
+                      ),
+                    ),
+
+                  // Bottom Loader
+                  if (provider.isFetchingMore)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.all(24.0),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    ),
+
+                  // Bottom Padding
+                  const SliverPadding(padding: EdgeInsets.only(bottom: 20)),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildBody(BuildContext context, ProductListProvider provider) {
-    if (provider.isLoading) {
-      return _buildLoadingGrid();
-    }
-    if (provider.products.isEmpty) {
-      return Center(child: Text('No products found in this category.'));
-    }
-
-    return _ProductGrid(provider: provider);
-  }
-
-  Widget _buildLoadingGrid() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
-      child: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
-            childAspectRatio: 0.68),
-        itemCount: 8,
-        itemBuilder: (context, index) => Container(
-            decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(12))),
+  // Shimmer Effect for Loading
+  Widget _buildLoadingSliver() {
+    return SliverPadding(
+      padding: const EdgeInsets.all(16),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 16,
+          childAspectRatio: 0.7,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            return Shimmer.fromColors(
+              baseColor: Colors.grey[300]!,
+              highlightColor: Colors.grey[100]!,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            );
+          },
+          childCount: 6,
+        ),
       ),
     );
   }
-}
 
-class _ProductGrid extends StatefulWidget {
-  final ProductListProvider provider;
-  const _ProductGrid({required this.provider});
-
-  @override
-  __ProductGridState createState() => __ProductGridState();
-}
-
-class __ProductGridState extends State<_ProductGrid> {
-  final _scrollController = ScrollController();
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >=
-          _scrollController.position.maxScrollExtent - 200) {
-        widget.provider.fetchMoreProducts();
+  // Helper to create a controller attached to the provider
+  ScrollController _ScrollControllerWrapper(ProductListProvider provider) {
+    final controller = ScrollController();
+    controller.addListener(() {
+      if (controller.position.pixels >=
+          controller.position.maxScrollExtent - 200) {
+        provider.fetchMoreProducts();
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 0.68,
-      ),
-      itemCount: widget.provider.products.length +
-          (widget.provider.isFetchingMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == widget.provider.products.length) {
-          return Center(child: CircularProgressIndicator());
-        }
-        final product = widget.provider.products[index];
-        return ModernProductCard(product: product);
-      },
-    );
+    return controller;
   }
 }

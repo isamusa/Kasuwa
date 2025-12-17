@@ -99,7 +99,7 @@ class _ContactAdminScreenState extends State<ContactAdminScreen> {
               ElevatedButton(
                 onPressed: _isSending ? null : _sendMessage,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.accentColor,
+                  backgroundColor: AppTheme.primaryColor,
                   padding: EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),

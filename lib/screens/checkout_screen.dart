@@ -127,7 +127,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!mounted) return;
 
       if (paymentCompleted == true) {
-        Provider.of<CartProvider>(context, listen: false).clear();
+        Provider.of<CartProvider>(context, listen: false).clearCart();
 
         // --- CHANGED THIS SECTION ---
         // Old: Navigate directly to MyOrdersScreen

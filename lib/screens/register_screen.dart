@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 import 'package:kasuwa/services/auth_service.dart';
 import 'package:kasuwa/theme/app_theme.dart';
 
@@ -7,337 +6,193 @@ class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
   @override
-  _RegisterScreenState createState() => _RegisterScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final AuthService _authService = AuthService();
-  bool _isLoading = false; // Add a loading state
   final _formKey = GlobalKey<FormState>();
+
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
-  final _referralCodeController = TextEditingController();
+  final _confirmController = TextEditingController();
+  final _referralController = TextEditingController();
 
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    _referralCodeController.dispose();
-    super.dispose();
-  }
-
-  void _togglePasswordVisibility() {
-    setState(() {
-      _obscurePassword = !_obscurePassword;
-    });
-  }
-
-  void _toggleConfirmPasswordVisibility() {
-    setState(() {
-      _obscureConfirmPassword = !_obscureConfirmPassword;
-    });
-  }
+  bool _isLoading = false;
+  bool _obscurePass = true;
+  bool _agreedToTerms = false;
 
   void _register() async {
+    FocusScope.of(context).unfocus();
+    if (!_agreedToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("You must agree to the Terms & Conditions")));
+      return;
+    }
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-
       final result = await _authService.register(
-        name: _nameController.text,
-        email: _emailController.text,
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
         password: _passwordController.text,
-        passwordConfirmation: _confirmPasswordController.text,
-        referralCode: _referralCodeController.text,
+        passwordConfirmation: _confirmController.text,
+        referralCode: _referralController.text.trim(),
       );
-
+      if (!mounted) return;
       setState(() => _isLoading = false);
-
       if (result['success']) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Registration successful! Please login.')),
-        );
-        Navigator.of(context).pop(); // Go back to login screen
+            const SnackBar(content: Text('Account created! Please login.')));
+        Navigator.pop(context);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${result['message']}')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(result['message']),
+            backgroundColor: AppTheme.errorColor));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Background Image and Gradient Overlay
-          Container(
-            decoration: BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage(
-                    'assets/images/login_background.jpg'), // Reusing the same asset
-                fit: BoxFit.cover,
-              ),
-            ),
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+            onPressed: () => Navigator.pop(context),
           ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppTheme.primaryColor.withOpacity(0.85),
-                  AppTheme.accentColor.withOpacity(0.85)
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-          ),
-          // Back button
-          Positioned(
-            top: 40,
-            left: 10,
-            child: IconButton(
-              icon: Icon(Icons.arrow_back_ios, color: Colors.white),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-
-          // Registration Form
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 10),
+              Text("Create Account",
+                  style: Theme.of(context).textTheme.displayMedium),
+              const SizedBox(height: 8),
+              Text("Join Kasuwa to start shopping",
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(color: AppTheme.textSecondary)),
+              const SizedBox(height: 30),
+              Form(
+                key: _formKey,
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildHeader(),
-                    const SizedBox(height: 30),
-                    _buildRegistrationForm(),
-                    const SizedBox(height: 30),
-                    _buildLoginLink(),
+                    _buildInput(
+                        "Full Name", Icons.person_outline, _nameController),
+                    const SizedBox(height: 16),
+                    _buildInput(
+                        "Email Address", Icons.email_outlined, _emailController,
+                        isEmail: true),
+                    const SizedBox(height: 16),
+                    _buildInput(
+                        "Password", Icons.lock_outline, _passwordController,
+                        isPass: true),
+                    const SizedBox(height: 16),
+                    _buildInput("Confirm Password", Icons.lock_outline,
+                        _confirmController,
+                        isPass: true),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _referralController,
+                      decoration: const InputDecoration(
+                        labelText: "Referral Code (Optional)",
+                        prefixIcon: Icon(Icons.confirmation_number_outlined),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- WIDGET BUILDERS ---
-
-  Widget _buildHeader() {
-    return Column(
-      children: [
-        Text(
-          'Create Account',
-          style: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Join the largest marketplace in Jos!',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.white.withOpacity(0.9),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRegistrationForm() {
-    return Form(
-      key: _formKey,
-      child: Column(
-        children: [
-          // Full Name Field
-          TextFormField(
-            controller: _nameController,
-            keyboardType: TextInputType.name,
-            textCapitalization: TextCapitalization.words,
-            style: TextStyle(color: AppTheme.textColorPrimary),
-            decoration: _inputDecoration(
-              hintText: 'Enter your full name',
-              prefixIcon: Icons.person_outline,
-            ),
-            validator: (value) => (value == null || value.isEmpty)
-                ? 'Please enter your name'
-                : null,
-          ),
-          const SizedBox(height: 16),
-          // Email Field
-          TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            style: TextStyle(color: AppTheme.textColorPrimary),
-            decoration: _inputDecoration(
-              hintText: 'Enter your email',
-              prefixIcon: Icons.email_outlined,
-            ),
-            validator: (value) {
-              if (value == null || value.isEmpty)
-                return 'Please enter your email';
-              if (!RegExp(r'\S+@\S+\.\S+').hasMatch(value))
-                return 'Please enter a valid email address';
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          // Password Field
-          TextFormField(
-            controller: _passwordController,
-            obscureText: _obscurePassword,
-            style: TextStyle(color: AppTheme.textColorPrimary),
-            decoration: _inputDecoration(
-              hintText: 'Enter your password',
-              prefixIcon: Icons.lock_outline,
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePassword
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  color: AppTheme.textColorSecondary,
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _agreedToTerms,
+                    activeColor: AppTheme.primaryColor,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4)),
+                    onChanged: (v) => setState(() => _agreedToTerms = v!),
+                  ),
+                  Expanded(
+                    child: Wrap(
+                      children: [
+                        Text("I agree to the ",
+                            style: Theme.of(context).textTheme.bodyMedium),
+                        GestureDetector(
+                          onTap: () {}, // Show terms modal
+                          child: Text("Terms & Conditions",
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                      color: AppTheme.primaryColor,
+                                      fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _register,
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text("Sign Up"),
                 ),
-                onPressed: _togglePasswordVisibility,
               ),
-            ),
-            validator: (value) {
-              if (value == null || value.isEmpty)
-                return 'Please enter a password';
-              if (value.length < 8)
-                return 'Password must be at least 8 characters long';
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          // Confirm Password Field
-          TextFormField(
-            controller: _confirmPasswordController,
-            obscureText: _obscureConfirmPassword,
-            style: TextStyle(color: AppTheme.textColorPrimary),
-            decoration: _inputDecoration(
-              hintText: 'Confirm your password',
-              prefixIcon: Icons.lock_outline,
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscureConfirmPassword
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  color: AppTheme.textColorSecondary,
-                ),
-                onPressed: _toggleConfirmPasswordVisibility,
+              const SizedBox(height: 30),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text("Already have an account?"),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("Login"),
+                  ),
+                ],
               ),
-            ),
-            validator: (value) {
-              if (value == null || value.isEmpty)
-                return 'Please confirm your password';
-              if (value != _passwordController.text)
-                return 'Passwords do not match';
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _referralCodeController,
-            decoration: const InputDecoration(
-              labelText: 'Referral Code (Optional)',
-              prefixIcon: Icon(Icons.card_giftcard_outlined),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12))),
-            ),
-          ),
-
-          const SizedBox(height: 30),
-
-          // Register Button
-          ElevatedButton(
-            onPressed: _register,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: 5,
-            ),
-            child: Text(
-              'CREATE ACCOUNT',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoginLink() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text("Already have an account? ",
-            style: TextStyle(color: Colors.white.withOpacity(0.9))),
-        TextButton(
-          onPressed: () {
-            // Navigate back to LoginScreen
-            Navigator.of(context).pop();
-          },
-          child: const Text(
-            'Login',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              decoration: TextDecoration.underline,
-              decorationColor: Colors.white,
-            ),
+              const SizedBox(height: 30),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
-  InputDecoration _inputDecoration({
-    required String hintText,
-    required IconData prefixIcon,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      hintText: hintText,
-      hintStyle: TextStyle(color: AppTheme.textColorSecondary),
-      prefixIcon: Icon(prefixIcon, color: AppTheme.textColorSecondary),
-      suffixIcon: suffixIcon,
-      filled: true,
-      fillColor: Colors.white.withOpacity(0.95),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.red.shade700, width: 2),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.red.shade700, width: 2),
+  Widget _buildInput(
+      String label, IconData icon, TextEditingController controller,
+      {bool isPass = false, bool isEmail = false}) {
+    return TextFormField(
+      controller: controller,
+      obscureText: isPass && _obscurePass,
+      keyboardType: isEmail ? TextInputType.emailAddress : TextInputType.text,
+      validator: (v) {
+        if (v == null || v.isEmpty) return "$label is required";
+        if (isEmail && !v.contains('@')) return "Invalid email";
+        if (isPass && v.length < 6) return "Min 6 chars";
+        if (isPass &&
+            label.contains("Confirm") &&
+            v != _passwordController.text) return "Passwords don't match";
+        return null;
+      },
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        suffixIcon: isPass
+            ? IconButton(
+                icon: Icon(
+                    _obscurePass ? Icons.visibility : Icons.visibility_off),
+                onPressed: () => setState(() => _obscurePass = !_obscurePass),
+              )
+            : null,
       ),
     );
   }

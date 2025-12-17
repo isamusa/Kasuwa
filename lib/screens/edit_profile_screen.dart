@@ -133,7 +133,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ElevatedButton(
                       onPressed: _isLoading ? null : _submitUpdate,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentColor,
+                        backgroundColor: AppTheme.primaryColor,
                         padding: EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -203,7 +203,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   child: Container(
                     padding: EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: AppTheme.accentColor,
+                      color: AppTheme.primaryColor,
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                     ),

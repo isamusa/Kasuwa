@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:kasuwa/screens/onboarding_screen.dart';
 import 'package:provider/provider.dart';
 // Import all providers
 import 'package:kasuwa/providers/auth_provider.dart';
@@ -201,15 +202,13 @@ class AuthWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, auth, child) {
-        // THE FIX: The AuthWrapper no longer decides between Login and Home.
-        // It now only shows the splash screen while the app initializes.
         if (auth.isInitializing) {
           return const SplashScreen();
         }
 
         // After initializing, it ALWAYS shows the main home screen.
         // The home screen itself will decide what to show based on the auth state.
-        return const EnhancedHomeScreen();
+        return const OnboardingScreen();
       },
     );
   }

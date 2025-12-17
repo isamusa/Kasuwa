@@ -105,7 +105,7 @@ class __ForgotPasswordViewState extends State<_ForgotPasswordView> {
                         ? null
                         : () => _submitRequest(context, provider),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.accentColor,
+                      backgroundColor: AppTheme.primaryColor,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),

@@ -105,7 +105,7 @@ class _EditShopProfileScreenState extends State<EditShopProfileScreen> {
                       right: 0,
                       child: CircleAvatar(
                         radius: 18,
-                        backgroundColor: AppTheme.accentColor,
+                        backgroundColor: AppTheme.primaryColor,
                         child: Icon(Icons.camera_alt,
                             color: Colors.white, size: 20),
                       ),
@@ -144,7 +144,7 @@ class _EditShopProfileScreenState extends State<EditShopProfileScreen> {
               ElevatedButton(
                 onPressed: _isLoading ? null : _submitUpdate,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.accentColor,
+                  backgroundColor: AppTheme.primaryColor,
                   padding: EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),

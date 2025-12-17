@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kasuwa/screens/contact_admin_screen.dart';
+import 'package:kasuwa/screens/login_screen.dart';
 import 'package:kasuwa/screens/shop_profile.dart';
 import 'package:provider/provider.dart';
 import 'package:kasuwa/providers/auth_provider.dart';
@@ -49,9 +50,8 @@ class ProfileScreen extends StatelessWidget {
         appBar: AppBar(
           title: Text('My Profile',
               style: TextStyle(
-                  color: AppTheme.textColorPrimary,
-                  fontWeight: FontWeight.bold)),
-          backgroundColor: AppTheme.cardBackgroundColor,
+                  color: AppTheme.textPrimary, fontWeight: FontWeight.bold)),
+          backgroundColor: AppTheme.surfaceColor,
           elevation: 1,
           automaticallyImplyLeading: false,
         ),
@@ -143,9 +143,11 @@ class ProfileScreen extends StatelessWidget {
 
               Center(
                 child: OutlinedButton(
-                  onPressed: () =>
-                      Provider.of<AuthProvider>(context, listen: false)
-                          .logout(),
+                  onPressed: () => {
+                    Provider.of<AuthProvider>(context, listen: false).logout(),
+                    Navigator.pushReplacement(context,
+                        MaterialPageRoute(builder: (_) => LoginScreen()))
+                  },
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 40, vertical: 12),
@@ -164,7 +166,7 @@ class ProfileScreen extends StatelessWidget {
               Center(
                   child: Text('Version 1.0.0',
                       style: TextStyle(
-                          color: AppTheme.textColorSecondary, fontSize: 12))),
+                          color: AppTheme.textSecondary, fontSize: 12))),
             ],
           ),
         ),
@@ -186,7 +188,7 @@ class ProfileScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.cardBackgroundColor,
+        color: AppTheme.surfaceColor,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -216,11 +218,11 @@ class ProfileScreen extends StatelessWidget {
                     style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: AppTheme.textColorPrimary)),
+                        color: AppTheme.textPrimary)),
                 const SizedBox(height: 4),
                 Text(email,
-                    style: TextStyle(
-                        fontSize: 14, color: AppTheme.textColorSecondary)),
+                    style:
+                        TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
               ],
             ),
           ),
@@ -296,7 +298,7 @@ class ProfileScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppTheme.accentColor, AppTheme.primaryColor],
+          colors: [AppTheme.surfaceColor, AppTheme.primaryColor],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -357,7 +359,7 @@ class ProfileScreen extends StatelessWidget {
               style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: AppTheme.textColorPrimary),
+                  color: AppTheme.textPrimary),
             ),
             const SizedBox(height: 12),
             Container(
@@ -394,7 +396,7 @@ class ProfileScreen extends StatelessWidget {
                 label: const Text('Share My Code',
                     style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.accentColor,
+                  backgroundColor: AppTheme.surfaceColor,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
@@ -414,14 +416,14 @@ class ProfileScreen extends StatelessWidget {
           style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: AppTheme.textColorSecondary)),
+              color: AppTheme.textSecondary)),
     );
   }
 
   Widget _buildSettingsCard(BuildContext context, List<Widget> children) {
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.cardBackgroundColor,
+        color: AppTheme.surfaceColor,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(

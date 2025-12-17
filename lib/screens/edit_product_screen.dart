@@ -210,7 +210,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
       appBar: AppBar(
         title: const Text('Edit Product'),
         backgroundColor: Colors.white,
-        foregroundColor: AppTheme.textColorPrimary,
+        foregroundColor: AppTheme.textPrimary,
         elevation: 1,
       ),
       body: _buildBody(),
@@ -280,7 +280,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
         style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: AppTheme.textColorPrimary),
+            color: AppTheme.textPrimary),
       ),
     );
   }
@@ -482,7 +482,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
             child: Container(
               padding: const EdgeInsets.all(2),
               decoration: const BoxDecoration(
-                color: AppTheme.destructiveColor,
+                color: AppTheme.errorColor,
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.close_rounded,
@@ -540,8 +540,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
           child: ExpansionTile(
             title: Text(variantTitle,
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textColorPrimary)),
+                    fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             expandedAlignment: Alignment.topLeft,
             children: [

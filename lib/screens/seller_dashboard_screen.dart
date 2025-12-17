@@ -115,7 +115,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
             onPressed: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => AddProductScreen()))
                 .then((_) => dashboardProvider.fetchDashboardData()),
-            backgroundColor: AppTheme.accentColor,
+            backgroundColor: AppTheme.primaryColor,
             child: const Icon(Icons.add, color: Colors.white),
             tooltip: 'Add New Product',
           ),
@@ -129,7 +129,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
       flexibleSpace: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [AppTheme.primaryColor, AppTheme.accentColor],
+            colors: [AppTheme.primaryColor, AppTheme.primaryColor],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -229,7 +229,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
                 style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textColorPrimary),
+                    color: AppTheme.textPrimary),
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(message,
@@ -305,7 +305,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
                     style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: AppTheme.textColorPrimary),
+                        color: AppTheme.textPrimary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis),
                 Text(title,
@@ -332,7 +332,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
                 style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textColorPrimary)),
+                    color: AppTheme.textPrimary)),
             const SizedBox(height: 24),
             SizedBox(
               height: 150,
@@ -385,7 +385,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
                   style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.textColorPrimary)),
+                      color: AppTheme.textPrimary)),
               TextButton(
                   onPressed: () {
                     //  Navigator.push(
@@ -447,7 +447,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
                 style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textColorPrimary)),
+                    color: AppTheme.textPrimary)),
           ),
           ListTile(
             leading: const Icon(Icons.edit_note_outlined,
@@ -494,7 +494,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
                 style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textColorPrimary)),
+                    color: AppTheme.textPrimary)),
             TextButton(onPressed: () {}, child: const Text('See All'))
           ],
         ),

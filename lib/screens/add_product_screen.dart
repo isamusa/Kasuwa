@@ -65,7 +65,7 @@ class __AddProductViewState extends State<_AddProductView> {
       appBar: AppBar(
         title: const Text('Add New Product'),
         backgroundColor: Colors.white,
-        foregroundColor: AppTheme.textColorPrimary,
+        foregroundColor: AppTheme.textPrimary,
         elevation: 1,
       ),
       body: _buildBody(provider),
@@ -229,7 +229,7 @@ class __AddProductViewState extends State<_AddProductView> {
                 style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textColorPrimary)),
+                    color: AppTheme.textPrimary)),
             const SizedBox(height: 16),
             ...children,
           ],

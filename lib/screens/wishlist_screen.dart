@@ -168,7 +168,7 @@ class WishlistScreen extends StatelessWidget {
                       // Provider.of<CartProvider>(context, listen: false).addToCart(product.id);
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.accentColor,
+                      backgroundColor: AppTheme.primaryColor,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),
                     ),

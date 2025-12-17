@@ -63,16 +63,15 @@ class _BrowseProductsScreenState extends State<BrowseProductsScreen>
         appBar: AppBar(
           title: Text('Discover',
               style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textColorPrimary)),
-          backgroundColor: AppTheme.cardBackgroundColor,
+                  fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+          backgroundColor: AppTheme.surfaceColor,
           elevation: 0,
           automaticallyImplyLeading: false,
           bottom: TabBar(
             controller: _tabController,
             indicatorColor: AppTheme.primaryColor,
             labelColor: AppTheme.primaryColor,
-            unselectedLabelColor: AppTheme.textColorSecondary,
+            unselectedLabelColor: AppTheme.textSecondary,
             labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             tabs: const [Tab(text: 'Categories'), Tab(text: 'Brands')],
           ),
@@ -104,14 +103,14 @@ class _BrowseProductsScreenState extends State<BrowseProductsScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-              color: AppTheme.cardBackgroundColor,
+              color: AppTheme.surfaceColor,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey[200]!)),
           child: Row(children: [
-            Icon(Icons.search, color: AppTheme.textColorSecondary),
+            Icon(Icons.search, color: AppTheme.textSecondary),
             SizedBox(width: 8),
             Text('Search products and brands...',
-                style: TextStyle(color: AppTheme.textColorSecondary))
+                style: TextStyle(color: AppTheme.textSecondary))
           ]),
         ),
       ),
@@ -189,7 +188,7 @@ class _BrowseProductsScreenState extends State<BrowseProductsScreen>
   Widget _buildCategoryList(List<MainCategory> categories) {
     return Container(
       width: 110,
-      color: AppTheme.cardBackgroundColor,
+      color: AppTheme.surfaceColor,
       child: ListView.builder(
         padding: const EdgeInsets.only(top: 16),
         itemCount: categories.length,
@@ -205,7 +204,7 @@ class _BrowseProductsScreenState extends State<BrowseProductsScreen>
               decoration: BoxDecoration(
                 gradient: isSelected
                     ? LinearGradient(
-                        colors: [AppTheme.accentColor, AppTheme.primaryColor],
+                        colors: [AppTheme.primaryLight, AppTheme.primaryColor],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight)
                     : null,
@@ -216,17 +215,14 @@ class _BrowseProductsScreenState extends State<BrowseProductsScreen>
                 children: [
                   Icon(categories[index].icon,
                       size: 28,
-                      color: isSelected
-                          ? Colors.white
-                          : AppTheme.textColorPrimary),
+                      color: isSelected ? Colors.white : AppTheme.textPrimary),
                   const SizedBox(height: 8),
                   Text(categories[index].name,
                       style: TextStyle(
                           fontWeight:
                               isSelected ? FontWeight.bold : FontWeight.normal,
-                          color: isSelected
-                              ? Colors.white
-                              : AppTheme.textColorPrimary,
+                          color:
+                              isSelected ? Colors.white : AppTheme.textPrimary,
                           fontSize: 12),
                       textAlign: TextAlign.center),
                 ],
@@ -262,7 +258,7 @@ class _BrowseProductsScreenState extends State<BrowseProductsScreen>
                           style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
-                              color: AppTheme.textColorPrimary)),
+                              color: AppTheme.textPrimary)),
                       IconButton(
                           icon: Icon(MdiIcons.filterVariant,
                               color: AppTheme.primaryColor),
@@ -331,17 +327,17 @@ class _BrowseProductsScreenState extends State<BrowseProductsScreen>
             child:
                 Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(MdiIcons.packageVariantRemove,
-                  size: 60, color: AppTheme.textColorSecondary),
+                  size: 60, color: AppTheme.textSecondary),
               SizedBox(height: 16),
               Text('Coming Soon!',
                   style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.textColorPrimary)),
+                      color: AppTheme.textPrimary)),
               SizedBox(height: 8),
               Text('No subcategories have been added yet.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.textColorSecondary))
+                  style: TextStyle(color: AppTheme.textSecondary))
             ])));
   }
 }

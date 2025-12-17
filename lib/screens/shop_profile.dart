@@ -106,13 +106,12 @@ class __ShopProfileViewState extends State<_ShopProfileView>
               expandedHeight: 250.0,
               floating: false,
               pinned: true,
-              backgroundColor: AppTheme.cardBackgroundColor,
+              backgroundColor: AppTheme.surfaceColor,
               elevation: 2,
               flexibleSpace: _buildFlexibleSpaceBar(widget.shop),
               actions: [
                 IconButton(
-                  icon: Icon(Icons.share_outlined,
-                      color: AppTheme.textColorPrimary),
+                  icon: Icon(Icons.share_outlined, color: AppTheme.textPrimary),
                   onPressed: () {
                     final url =
                         '${AppConfig.baseUrl}/shops/${widget.shop.slug}';

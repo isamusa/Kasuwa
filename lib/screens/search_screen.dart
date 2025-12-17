@@ -6,10 +6,11 @@ import 'package:intl/intl.dart';
 import 'package:kasuwa/providers/home_provider.dart'; // To use the HomeProduct model
 import 'package:kasuwa/screens/product_details.dart';
 import 'package:kasuwa/theme/app_theme.dart';
+import 'package:kasuwa/config/app_config.dart';
 
 // --- Service for API Communication ---
 class SearchService {
-  static const String _baseUrl = 'https://optimal-sharp-bat.ngrok-free.app/api';
+  static const String _baseUrl = AppConfig.apiBaseUrl;
 
   Future<List<HomeProduct>> searchProducts(String query) async {
     if (query.isEmpty) return [];
@@ -98,7 +99,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
-        iconTheme: IconThemeData(color: AppTheme.textColorPrimary),
+        iconTheme: IconThemeData(color: AppTheme.textPrimary),
         title: _buildSearchBar(),
       ),
       body: _buildBody(),
@@ -114,7 +115,7 @@ class _SearchScreenState extends State<SearchScreen> {
         border: InputBorder.none,
         hintStyle: TextStyle(color: Colors.grey[600]),
       ),
-      style: TextStyle(color: AppTheme.textColorPrimary, fontSize: 18),
+      style: TextStyle(color: AppTheme.textPrimary, fontSize: 18),
     );
   }
 

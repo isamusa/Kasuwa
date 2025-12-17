@@ -64,7 +64,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textColorPrimary),
+                    color: AppTheme.textPrimary),
               ),
               const SizedBox(height: 16),
               const Text(
