@@ -1,4 +1,53 @@
-# Miscellaneous
+### Flutter/Dart ###
+# Build outputs
+/build/
+/.dart_tool/
+/.pub-cache/
+/.packages
+/.flutter-plugins
+/.flutter-plugins-dependencies
+
+# IntelliJ / Android Studio
+/.idea/
+*.iml
+
+# VS Code
+/.vscode/
+
+# macOS
+.DS_Store
+
+# Linux
+/*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Android
+/android/.gradle/
+/android/app/*.keystore
+
+# iOS
+/ios/Pods/
+/ios/Flutter/Flutter.framework
+/ios/Flutter/Flutter.podspec
+
+# Generated plugin registrant (Flutter)
+/windows/flutter/GeneratedPluginRegistrant.*
+
+# Unit test artifact
+/test/*.mocks.dart
+
+# Dependency manager (PHP vendor)
+/vendor/
+
+# Logs
+*.log
+
+# Misc
+pubspec.lock
+env.*# Miscellaneous
 *.class
 *.log
 *.pyc
