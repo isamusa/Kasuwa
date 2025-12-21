@@ -6,7 +6,7 @@ class CreateShopScreen extends StatefulWidget {
   const CreateShopScreen({super.key});
 
   @override
-  _CreateShopScreenState createState() => _CreateShopScreenState();
+  State<CreateShopScreen> createState() => _CreateShopScreenState();
 }
 
 class _CreateShopScreenState extends State<CreateShopScreen> {
@@ -14,21 +14,19 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _locationController = TextEditingController();
-  final _phoneController =
-      TextEditingController(); // NEW: Phone number controller
+  final _phoneController = TextEditingController();
 
   @override
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
     _locationController.dispose();
-    _phoneController.dispose(); // NEW: Dispose the new controller
+    _phoneController.dispose();
     super.dispose();
   }
 
-  void _proceedToInstructions() {
+  void _proceed() {
     if (_formKey.currentState!.validate()) {
-      // UPDATED: Instead of calling the API, navigate to the next screen
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -48,10 +46,13 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text('Create Your Shop (Step 1 of 2)'),
-        backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
+        title: const Text('Setup Shop',
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -61,47 +62,36 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildHeader(),
-              const SizedBox(height: 32),
-              _buildTextField(
-                  controller: _nameController,
-                  label: 'Shop Name',
-                  hint: 'e.g., Bello\'s Gadget Haven',
-                  icon: Icons.storefront_outlined),
-              const SizedBox(height: 16),
-              _buildTextField(
-                  controller: _descriptionController,
-                  label: 'Shop Description',
-                  hint: 'What makes your shop special?',
-                  icon: Icons.description_outlined,
-                  maxLines: 4),
-              const SizedBox(height: 16),
-              _buildTextField(
-                  controller: _locationController,
-                  label: 'Location',
-                  hint: 'e.g., Terminus Market, Jos',
-                  icon: Icons.location_on_outlined),
-              const SizedBox(height: 16),
-              _buildTextField(
-                // NEW: Phone number field
-                controller: _phoneController,
-                label: 'Phone Number',
-                hint: 'e.g., 08012345678',
-                icon: Icons.phone_outlined,
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 40),
+              _buildInput("Shop Name", "e.g. Zara Fashion",
+                  Icons.store_outlined, _nameController),
+              const SizedBox(height: 20),
+              _buildInput("Description", "What do you sell?",
+                  Icons.description_outlined, _descriptionController,
+                  maxLines: 3),
+              const SizedBox(height: 20),
+              _buildInput("Location", "e.g. Lagos, Nigeria",
+                  Icons.location_on_outlined, _locationController),
+              const SizedBox(height: 20),
+              _buildInput("Business Phone", "For customer inquiries",
+                  Icons.phone_outlined, _phoneController,
+                  type: TextInputType.phone),
+              const SizedBox(height: 40),
               ElevatedButton(
-                onPressed: _proceedToInstructions, // UPDATED: Button action
+                onPressed: _proceed,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryColor,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 18),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                  elevation: 4,
+                  shadowColor: AppTheme.primaryColor.withOpacity(0.4),
                 ),
-                child: const Text('Proceed to Instructions',
-                    style: TextStyle(color: Colors.white)),
+                child: const Text('Continue',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white)),
               ),
             ],
           ),
@@ -113,50 +103,54 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
   Widget _buildHeader() {
     return Column(
       children: [
-        Icon(Icons.add_business_outlined,
-            size: 60, color: AppTheme.primaryColor),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppTheme.primaryColor.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.storefront,
+              size: 40, color: AppTheme.primaryColor),
+        ),
         const SizedBox(height: 16),
-        Text('Tell Us About Your Shop',
-            style: Theme.of(context)
-                .textTheme
-                .headlineSmall
-                ?.copyWith(fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center),
+        const Text("Start Your Business",
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
-        Text(
-            'This information will be visible to customers on your shop profile.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .bodyLarge
-                ?.copyWith(color: Colors.grey[600])),
+        const Text(
+          "Enter your shop details to get started. You can change these later.",
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey, fontSize: 15),
+        ),
       ],
     );
   }
 
-  Widget _buildTextField(
-      {required TextEditingController controller,
-      required String label,
-      required String hint,
-      required IconData icon,
-      int maxLines = 1,
-      TextInputType? keyboardType}) {
+  Widget _buildInput(String label, String hint, IconData icon,
+      TextEditingController controller,
+      {int maxLines = 1, TextInputType type = TextInputType.text}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
-      keyboardType: keyboardType,
+      keyboardType: type,
+      validator: (v) => v == null || v.isEmpty ? "$label is required" : null,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: AppTheme.primaryColor.withOpacity(0.7)),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        hintStyle: TextStyle(color: Colors.grey[400]),
+        prefixIcon: Icon(icon, color: Colors.grey),
+        filled: true,
+        fillColor: Colors.grey[50],
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFEEEEEE))),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppTheme.primaryColor, width: 2)),
+            borderSide:
+                const BorderSide(color: AppTheme.primaryColor, width: 1.5)),
       ),
-      validator: (value) => (value == null || value.isEmpty)
-          ? 'The $label cannot be empty.'
-          : null,
     );
   }
 }

@@ -1,246 +1,234 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:kasuwa/providers/auth_provider.dart';
-import 'package:kasuwa/services/profile_service.dart';
 import 'package:provider/provider.dart';
+import 'package:kasuwa/providers/auth_provider.dart';
+import 'package:kasuwa/theme/app_theme.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kasuwa/config/app_config.dart';
-import 'package:kasuwa/theme/app_theme.dart';
-
-String storageUrl(String path) => '${AppConfig.fileBaseUrl}/$path';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
 
   @override
-  _EditProfileScreenState createState() => _EditProfileScreenState();
+  State<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _nameController;
-  late TextEditingController _phoneController;
-  late TextEditingController _emailController;
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController(); // Read-only
 
-  final ProfileService _profileService = ProfileService();
-  final ImagePicker _picker = ImagePicker();
   File? _imageFile;
+  final ImagePicker _picker = ImagePicker();
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final user = authProvider.user!;
-    _nameController = TextEditingController(text: user['name']);
-    _phoneController = TextEditingController(text: user['phone_number']);
-    _emailController = TextEditingController(text: user['email']);
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
-    _emailController.dispose();
-    super.dispose();
+    // Pre-fill data
+    final user = Provider.of<AuthProvider>(context, listen: false).user;
+    if (user != null) {
+      _nameController.text = user['name'] ?? '';
+      _phoneController.text = user['phone'] ?? '';
+      _emailController.text = user['email'] ?? '';
+    }
   }
 
   Future<void> _pickImage() async {
-    final XFile? selectedImage =
-        await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (selectedImage != null) {
+    final XFile? pickedFile =
+        await _picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
       setState(() {
-        _imageFile = File(selectedImage.path);
+        _imageFile = File(pickedFile.path);
       });
     }
   }
 
-  Future<void> _submitUpdate() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
 
-      final result = await _profileService.updateProfile(
-        name: _nameController.text,
-        phoneNumber: _phoneController.text,
-        imageFile: _imageFile,
-      );
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+    final success = await authProvider.updateProfile(
+      _nameController.text.trim(),
+      _phoneController.text.trim(),
+      _imageFile,
+    );
 
-      if (result['success']) {
-        // THE FIX: Instead of manually updating the user, we tell the AuthProvider
-        // to refresh its state from the server, ensuring data consistency.
-        await authProvider.refreshUser();
+    setState(() => _isLoading = false);
 
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    if (success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
             content: Text('Profile updated successfully!'),
-            backgroundColor: Colors.green));
-        Navigator.of(context).pop();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: ${result['message']}'),
-            backgroundColor: Colors.red));
-      }
+            backgroundColor: Colors.green),
+      );
+      Navigator.pop(context); // Go back to Profile Screen
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Failed to update profile. Please try again.'),
+            backgroundColor: Colors.red),
+      );
     }
+  }
+
+  // Helper for image URL
+  String _getAvatarUrl(Map<String, dynamic>? user) {
+    if (user == null || user['profile_picture_url'] == null) return '';
+    String path = user['profile_picture_url'];
+
+    // 1. If it's a Cloudinary/External URL, use it directly
+    if (path.startsWith('http')) return path;
+
+    // 2. If it's a local path, construct the URL using the main baseUrl
+    return '${AppConfig.baseUrl}/storage/$path';
   }
 
   @override
   Widget build(BuildContext context) {
-    // We only need the user here for the initial URL, state changes are handled by the provider
-    final user = Provider.of<AuthProvider>(context, listen: false).user!;
-    final profilePictureUrl = user['profile_picture_url'] != null
-        ? storageUrl(user['profile_picture_url'])
-        : null;
+    final user = Provider.of<AuthProvider>(context).user;
+    final avatarUrl = _getAvatarUrl(user);
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text('Edit Profile'),
-        backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
+        title: const Text("Edit Profile",
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: const BackButton(color: Colors.black),
       ),
       body: SingleChildScrollView(
-        child: Column(
-          children: [
-            _buildProfileHeader(profilePictureUrl),
-            const SizedBox(height: 100), // Space for the oversized avatar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+        padding: const EdgeInsets.all(24.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              // 1. Profile Picture Picker
+              Center(
+                child: Stack(
                   children: [
-                    _buildTextField(
-                        controller: _nameController,
-                        label: 'Full Name',
-                        icon: Icons.person_outline),
-                    SizedBox(height: 16),
-                    _buildTextField(
-                        controller: _phoneController,
-                        label: 'Phone Number',
-                        icon: Icons.phone_outlined,
-                        keyboardType: TextInputType.phone),
-                    SizedBox(height: 16),
-                    _buildTextField(
-                        controller: _emailController,
-                        label: 'Email Address',
-                        icon: Icons.email_outlined,
-                        enabled: false),
-                    SizedBox(height: 32),
-                    ElevatedButton(
-                      onPressed: _isLoading ? null : _submitUpdate,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryColor,
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.grey[200]!, width: 2),
                       ),
-                      child: _isLoading
-                          ? SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 3))
-                          : Text('Save Changes',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold)),
+                      child: ClipOval(
+                        child: _imageFile != null
+                            ? Image.file(_imageFile!, fit: BoxFit.cover)
+                            : (avatarUrl.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: avatarUrl,
+                                    fit: BoxFit.cover,
+                                    placeholder: (c, u) =>
+                                        const CircularProgressIndicator(),
+                                    errorWidget: (c, u, e) => const Icon(
+                                        Icons.person,
+                                        size: 50,
+                                        color: Colors.grey),
+                                  )
+                                : const Icon(Icons.person,
+                                    size: 60, color: Colors.grey)),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: GestureDetector(
+                        onTap: _pickImage,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            color: AppTheme.primaryColor,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.camera_alt,
+                              color: Colors.white, size: 20),
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+              const SizedBox(height: 40),
 
-  Widget _buildProfileHeader(String? profilePictureUrl) {
-    return Stack(
-      clipBehavior: Clip.none,
-      alignment: Alignment.center,
-      children: [
-        Container(
-          height: 150,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: AppTheme.primaryColor,
-            borderRadius: BorderRadius.vertical(
-                bottom:
-                    Radius.elliptical(MediaQuery.of(context).size.width, 80.0)),
-          ),
-        ),
-        Positioned(
-          top: 70,
-          child: Stack(
-            children: [
-              CircleAvatar(
-                radius: 80,
-                backgroundColor: Colors.white,
-                child: CircleAvatar(
-                  radius: 75,
-                  backgroundColor: Colors.grey[200],
-                  backgroundImage: _imageFile != null
-                      ? FileImage(_imageFile!)
-                      : (profilePictureUrl != null
-                          ? CachedNetworkImageProvider(profilePictureUrl)
-                          : null) as ImageProvider?,
-                  child: _imageFile == null && profilePictureUrl == null
-                      ? Icon(Icons.person, size: 80, color: Colors.grey[400])
-                      : null,
+              // 2. Form Fields
+              _buildTextField(
+                  "Full Name", _nameController, Icons.person_outline),
+              const SizedBox(height: 20),
+              _buildTextField(
+                  "Phone Number", _phoneController, Icons.phone_outlined,
+                  inputType: TextInputType.phone),
+              const SizedBox(height: 20),
+              _buildTextField(
+                  "Email Address", _emailController, Icons.email_outlined,
+                  isReadOnly: true),
+
+              const SizedBox(height: 40),
+
+              // 3. Save Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    elevation: 2,
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Text("Save Changes",
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white)),
                 ),
               ),
-              Positioned(
-                bottom: 5,
-                right: 5,
-                child: GestureDetector(
-                  onTap: _pickImage,
-                  child: Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: Icon(Icons.edit, color: Colors.white, size: 20),
-                  ),
-                ),
-              )
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 
   Widget _buildTextField(
-      {required TextEditingController controller,
-      required String label,
-      required IconData icon,
-      bool enabled = true,
-      TextInputType? keyboardType}) {
+      String label, TextEditingController controller, IconData icon,
+      {bool isReadOnly = false, TextInputType inputType = TextInputType.text}) {
     return TextFormField(
       controller: controller,
-      enabled: enabled,
-      keyboardType: keyboardType,
+      readOnly: isReadOnly,
+      keyboardType: inputType,
+      style: TextStyle(color: isReadOnly ? Colors.grey[600] : Colors.black),
+      validator: (val) => val!.isEmpty ? "This field is required" : null,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: AppTheme.primaryColor.withOpacity(0.7)),
+        prefixIcon: Icon(icon, color: Colors.grey[500]),
         filled: true,
-        fillColor: enabled ? Colors.white : Colors.grey[200],
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        fillColor: isReadOnly ? Colors.grey[100] : Colors.grey[50],
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey[200]!)),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: AppTheme.primaryColor, width: 2)),
+            borderSide: const BorderSide(color: AppTheme.primaryColor)),
       ),
-      validator: (value) => (value == null || value.isEmpty)
-          ? 'This field cannot be empty.'
-          : null,
     );
   }
 }

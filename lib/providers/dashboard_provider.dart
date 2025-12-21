@@ -1,17 +1,23 @@
 import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:kasuwa/services/dashboard_service.dart';
 import 'package:kasuwa/config/app_config.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import 'package:kasuwa/providers/auth_provider.dart';
 import 'package:kasuwa/providers/notification_provider.dart';
+import 'package:kasuwa/models/notification_model.dart'; // IMPORT THE MODEL
 
 String storageUrl(String? path) {
   if (path == null || path.isEmpty) return '';
-  return '${AppConfig.fileBaseUrl}/$path';
+
+  // 1. If it's already a full URL (Cloudinary), return it as is.
+  if (path.startsWith('http') || path.startsWith('https')) {
+    return path;
+  }
+
+  // 2. If it's a legacy relative path, prepend the Render base URL.
+  return '${AppConfig.baseUrl}/storage/$path';
 }
 
 class DashboardSummary {
@@ -34,6 +40,9 @@ class DashboardSummary {
     required this.activeProducts,
     required this.inactiveProducts,
   });
+
+  // Getter used in UI
+  int get totalOrders => pendingOrders + processingOrders + completedOrders;
 
   factory DashboardSummary.fromJson(Map<String, dynamic> json) =>
       DashboardSummary(
@@ -99,12 +108,14 @@ class DashboardProvider with ChangeNotifier {
   String? _error;
   bool _hasFetchedData = false;
 
-  // Public getters
   DashboardSummary? get summary => _summary;
   List<SellerProduct> get filteredProducts => _filteredProducts;
+
+  // Filter for Shop notifications using the model
   List<AppNotification> get notifications => _notificationProvider.notifications
       .where((n) => n.notifiableType.contains('Shop'))
       .toList();
+
   List<FlSpot> get salesData => _salesData;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -161,6 +172,5 @@ class DashboardProvider with ChangeNotifier {
     _hasFetchedData = false;
     _error = null;
     notifyListeners();
-    log("Dashboard data cleared due to logout.");
   }
 }

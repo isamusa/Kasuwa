@@ -4,122 +4,171 @@ import 'package:provider/provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:kasuwa/screens/order_details_screen.dart';
 import 'package:kasuwa/theme/app_theme.dart';
+import 'package:intl/intl.dart';
+import 'package:kasuwa/models/notification_model.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // The screen consumes the globally available NotificationProvider.
     return Consumer<NotificationProvider>(
       builder: (context, provider, child) {
         return Scaffold(
+          backgroundColor: Colors.white,
           appBar: AppBar(
-            title: const Text('Notifications'),
-            backgroundColor: AppTheme.primaryColor,
-            foregroundColor: Colors.white,
+            title: const Text('Notifications',
+                style: TextStyle(
+                    color: Colors.black, fontWeight: FontWeight.bold)),
+            backgroundColor: Colors.white,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.black),
             actions: [
               if (provider.unreadCount > 0)
                 TextButton(
                   onPressed: () => provider.markAllAsRead(),
-                  child: const Text('Mark All as Read',
-                      style: TextStyle(color: Colors.white)),
+                  child: const Text('Mark all read',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                 )
             ],
           ),
-          body: _buildBody(provider),
+          body: _buildBody(context, provider),
         );
       },
     );
   }
 
-  Widget _buildBody(NotificationProvider provider) {
+  Widget _buildBody(BuildContext context, NotificationProvider provider) {
     if (provider.isLoading && provider.notifications.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (provider.notifications.isEmpty) {
-      return _buildEmptyState();
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.notifications_none, size: 80, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            Text("No notifications yet",
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[600])),
+          ],
+        ),
+      );
     }
 
-    return ListView.separated(
-      itemCount: provider.notifications.length,
+    // Grouping Logic
+    final grouped = <String, List<AppNotification>>{};
+    for (var notif in provider.notifications) {
+      final date = DateFormat('yyyy-MM-dd').format(notif.createdAt);
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final yesterday = DateFormat('yyyy-MM-dd')
+          .format(DateTime.now().subtract(const Duration(days: 1)));
+
+      String label = date;
+      if (date == today)
+        label = "Today";
+      else if (date == yesterday) label = "Yesterday";
+
+      if (!grouped.containsKey(label)) grouped[label] = [];
+      grouped[label]!.add(notif);
+    }
+
+    return ListView.builder(
+      itemCount: grouped.keys.length,
       itemBuilder: (context, index) {
-        final notification = provider.notifications[index];
-        return _buildNotificationTile(context, notification, provider);
+        final key = grouped.keys.elementAt(index);
+        final notifications = grouped[key]!;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(key,
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[600],
+                      fontSize: 13)),
+            ),
+            ...notifications
+                .map((n) => _buildNotificationTile(context, n, provider))
+                .toList(),
+          ],
+        );
       },
-      separatorBuilder: (context, index) =>
-          const Divider(height: 0, indent: 16, endIndent: 16),
     );
   }
 
   Widget _buildNotificationTile(BuildContext context,
       AppNotification notification, NotificationProvider provider) {
-    // Check if the notification was sent to a Shop model.
-    final bool isShopNotification =
-        notification.notifiableType.contains('Shop');
+    final isShop = notification.notifiableType.contains('Shop');
+    Color bg = notification.isRead
+        ? Colors.white
+        : AppTheme.primaryColor.withOpacity(0.05);
 
-    return ListTile(
-      tileColor: notification.isRead
-          ? Colors.white
-          : AppTheme.primaryColor.withOpacity(0.05),
-      leading: CircleAvatar(
-        backgroundColor: notification.isRead
-            ? Colors.grey[200]
-            : AppTheme.primaryColor.withOpacity(0.2),
-        child: Icon(
-          isShopNotification
-              ? Icons.storefront_outlined
-              : Icons.receipt_long_outlined,
-          color: notification.isRead ? Colors.grey[600] : AppTheme.primaryColor,
-        ),
-      ),
-      title: Text(notification.title,
-          style: TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(notification.message),
-          const SizedBox(height: 4),
-          Text(
-            timeago.format(notification.createdAt),
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
-        ],
-      ),
-      isThreeLine: true,
+    return InkWell(
       onTap: () {
-        // Mark as read when tapped
         provider.markAsRead(notification.id);
-
-        // If it's an order notification, navigate to the order details
         if (notification.orderId != null) {
           Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  OrderDetailsScreen(orderId: notification.orderId!),
-            ),
-          );
+              context,
+              MaterialPageRoute(
+                  builder: (_) =>
+                      OrderDetailsScreen(orderId: notification.orderId!)));
         }
       },
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.notifications_off_outlined,
-              size: 80, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          const Text('No Notifications Yet',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text('Important updates and alerts will appear here.',
-              style: TextStyle(color: Colors.grey[600]),
-              textAlign: TextAlign.center),
-        ],
+      child: Container(
+        color: bg,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: isShop ? Colors.orange[50] : Colors.blue[50],
+              child: Icon(
+                isShop ? Icons.storefront : Icons.local_shipping_outlined,
+                color: isShop ? Colors.orange : Colors.blue,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(notification.title,
+                            style: TextStyle(
+                                fontWeight: notification.isRead
+                                    ? FontWeight.normal
+                                    : FontWeight.bold,
+                                fontSize: 15)),
+                      ),
+                      Text(
+                          timeago.format(notification.createdAt,
+                              locale: 'en_short'),
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(notification.message,
+                      style: TextStyle(
+                          color: Colors.grey[700], fontSize: 13, height: 1.4),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

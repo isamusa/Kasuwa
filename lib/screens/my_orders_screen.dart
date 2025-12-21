@@ -20,10 +20,12 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
   @override
   void initState() {
     super.initState();
-    // Reduced animation duration for snappier feel
     _tabController = TabController(length: 3, vsync: this);
+
+    // --- UPDATED: Fetch latest orders immediately on open ---
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<OrderProvider>(context, listen: false).fetchOrders();
+      Provider.of<OrderProvider>(context, listen: false)
+          .fetchOrders(forceRefresh: true); // Added forceRefresh: true
     });
   }
 
@@ -36,7 +38,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA), // cleaner ultra-light grey
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text('My Orders',
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
@@ -165,8 +167,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10), // Slightly tighter radius
-        border: Border.all(color: Colors.grey[100]!), // Subtle border
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey[100]!),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withOpacity(0.02),
@@ -185,18 +187,16 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           },
           borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.all(12.0), // Reduced padding
+            padding: const EdgeInsets.all(12.0),
             child: Column(
               children: [
-                // Row 1: Image, Details, Price
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Tiny Thumbnail
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: Container(
-                        height: 48, // Smaller image
+                        height: 48,
                         width: 48,
                         color: Colors.grey[50],
                         child: firstItemImage.isNotEmpty
@@ -213,7 +213,6 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Info
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,17 +252,13 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 10),
                 Divider(height: 1, color: Colors.grey[100]),
                 const SizedBox(height: 8),
-
-                // Row 2: Status Chips (Compact)
                 Row(
                   children: [
                     _buildCompactStatusChip(order.status, statusColor, true),
                     const Spacer(),
-                    // Chevron to indicate tap action
                     Icon(Icons.chevron_right, size: 16, color: Colors.grey[400])
                   ],
                 )
@@ -302,8 +297,6 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
       ),
     );
   }
-
-  // --- Helpers ---
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {

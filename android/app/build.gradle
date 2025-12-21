@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.kasuwa"
+    namespace = "com.magnificent.kasuwa"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.kasuwa"
+        applicationId = "com.magnificent.kasuwa"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -30,11 +30,22 @@ android {
         versionName = flutter.versionName
     }
 
+   signingConfigs {
+        release {
+            keyAlias 'upload'
+            keyPassword '33617623' // Or load from key.properties
+            storeFile file('c:/Users/magnificent/upload-keystore.jks') // Or load from key.properties
+            storePassword '33617623'
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            // detailed signing config
+            signingConfig signingConfigs.release
+            minifyEnabled true // Shrinks code size
+            shrinkResources true // Removes unused resources
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 }

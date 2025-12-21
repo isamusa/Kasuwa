@@ -60,6 +60,7 @@ class CheckoutProvider with ChangeNotifier {
   bool _hasFetchedData = false;
   double _shippingFee = 1500.00; // Start with a default
   String _estimatedDelivery = "1-2 business days";
+  int? _createdOrderId;
 
   List<ShippingAddress> get addresses => _addresses;
   ShippingAddress? get selectedAddress => _selectedAddress;
@@ -79,6 +80,7 @@ class CheckoutProvider with ChangeNotifier {
   Future<void> fetchAddresses({List<CheckoutCartItem>? items}) async {
     _isLoading = true;
     _hasFetchedData = true;
+    _createdOrderId = null;
     notifyListeners();
     try {
       final token = _auth.token;
@@ -124,7 +126,14 @@ class CheckoutProvider with ChangeNotifier {
 
   void selectAddress(ShippingAddress address, List<CheckoutCartItem> items) {
     _selectedAddress = address;
+    _createdOrderId = null;
+
     calculateShippingFee(items);
+    notifyListeners();
+  }
+
+  void resetOrderTracking() {
+    _createdOrderId = null;
     notifyListeners();
   }
 
@@ -138,6 +147,16 @@ class CheckoutProvider with ChangeNotifier {
       return {'success': false, 'message': 'Please select a shipping address.'};
     }
 
+    // 5. MODIFIED LOGIC: Check if we already have an order
+    if (_createdOrderId != null) {
+      print("Retrying existing order ID: $_createdOrderId");
+      return await _checkoutService.retryOrderPayment(
+        orderId: _createdOrderId!,
+        token: token,
+      );
+    }
+
+    // --- Create a NEW Order ---
     final itemsPayload = items
         .map((item) => {
               'product_id': item.productId,
@@ -155,6 +174,9 @@ class CheckoutProvider with ChangeNotifier {
     if (newOrderId == null) {
       return {'success': false, 'message': 'Failed to create your order.'};
     }
+
+    // 6. Save the new Order ID so we don't duplicate it next time
+    _createdOrderId = newOrderId;
 
     return await _checkoutService.initializePayment(
       orderId: newOrderId,

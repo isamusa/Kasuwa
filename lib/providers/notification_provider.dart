@@ -1,47 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:kasuwa/services/notification_service.dart';
 import 'package:kasuwa/providers/auth_provider.dart';
+// 1. IMPORT THE MODEL
+import 'package:kasuwa/models/notification_model.dart';
 
-// --- Data Model for a Notification ---
-class AppNotification {
-  final String id;
-  final String title;
-  final String message;
-  final int? orderId;
-  final DateTime createdAt;
-  final bool isRead;
-  final String notifiableType;
+// 2. MAKE SURE 'class AppNotification' IS DELETED FROM HERE
 
-  AppNotification({
-    required this.id,
-    required this.title,
-    required this.message,
-    this.orderId,
-    required this.createdAt,
-    required this.isRead,
-    required this.notifiableType,
-  });
-
-  factory AppNotification.fromJson(Map<String, dynamic> json) {
-    // THE FIX: Safely handle the case where 'data' might be null or not a map.
-    // We default to an empty map if 'data' is null or not the expected type.
-    final data = (json['data'] is Map<String, dynamic>)
-        ? json['data'] as Map<String, dynamic>
-        : <String, dynamic>{};
-
-    return AppNotification(
-      id: json['id'],
-      title: data['title'] ?? 'Notification',
-      message: data['message'] ?? 'You have a new notification.',
-      orderId: data['order_id'],
-      createdAt: DateTime.parse(json['created_at']),
-      isRead: json['read_at'] != null,
-      notifiableType: json['notifiable_type'] ?? '',
-    );
-  }
-}
-
-// --- The Provider Class ---
 class NotificationProvider with ChangeNotifier {
   final NotificationService _notificationService = NotificationService();
   final AuthProvider _auth;
@@ -67,7 +31,6 @@ class NotificationProvider with ChangeNotifier {
 
   Future<void> fetchNotifications() async {
     final token = _auth.token;
-    print(token);
     if (token == null) return;
 
     _isLoading = true;
@@ -92,18 +55,19 @@ class NotificationProvider with ChangeNotifier {
     final token = _auth.token;
     if (token == null) return;
 
-    final notificationIndex =
-        _notifications.indexWhere((n) => n.id == notificationId);
-    if (notificationIndex != -1 && !_notifications[notificationIndex].isRead) {
-      final oldNotification = _notifications[notificationIndex];
-      _notifications[notificationIndex] = AppNotification(
-        id: oldNotification.id,
-        title: oldNotification.title,
-        message: oldNotification.message,
-        orderId: oldNotification.orderId,
-        createdAt: oldNotification.createdAt,
+    final index = _notifications.indexWhere((n) => n.id == notificationId);
+    if (index != -1 && !_notifications[index].isRead) {
+      final old = _notifications[index];
+      // Create copy with isRead = true
+      _notifications[index] = AppNotification(
+        id: old.id,
+        title: old.title,
+        message: old.message,
+        type: old.type,
+        notifiableType: old.notifiableType,
+        createdAt: old.createdAt,
         isRead: true,
-        notifiableType: oldNotification.notifiableType,
+        orderId: old.orderId,
       );
       notifyListeners();
 
@@ -115,17 +79,18 @@ class NotificationProvider with ChangeNotifier {
     final token = _auth.token;
     if (token == null) return;
 
-    _notifications = _notifications
-        .map((n) => AppNotification(
-              id: n.id,
-              title: n.title,
-              message: n.message,
-              orderId: n.orderId,
-              createdAt: n.createdAt,
-              isRead: true,
-              notifiableType: n.notifiableType,
-            ))
-        .toList();
+    _notifications = _notifications.map((n) {
+      return AppNotification(
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        notifiableType: n.notifiableType,
+        createdAt: n.createdAt,
+        isRead: true,
+        orderId: n.orderId,
+      );
+    }).toList();
     notifyListeners();
 
     await _notificationService.markAllAsRead(token);

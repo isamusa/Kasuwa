@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:kasuwa/providers/checkout_provider.dart';
 import 'package:kasuwa/services/cart_service.dart';
 import 'package:kasuwa/config/app_config.dart';
 import 'package:kasuwa/providers/auth_provider.dart';
 import 'package:kasuwa/screens/checkout_screen.dart'; // Required for CheckoutCartItem
+import 'package:kasuwa/providers/checkout_provider.dart';
 
 String storageUrl(String? path) {
   if (path == null || path.isEmpty) return '';
-  if (path.startsWith('http')) return path;
-  return '${AppConfig.fileBaseUrl}/$path';
+  if (path.startsWith('http') || path.startsWith('https')) {
+    return path;
+  }
+  return '${AppConfig.baseUrl}/storage/$path';
 }
 
-// Data Model for Cart Items
+// --- Data Model for Cart Items ---
 class CartItem {
   final int id;
   final int productId;
@@ -31,7 +33,7 @@ class CartItem {
     this.variantDescription,
   });
 
-  // Getter alias to match UI code if it uses 'productImage'
+  // Getter alias to match UI code
   String get productImage => imageUrl;
 
   factory CartItem.fromJson(Map<String, dynamic> json) {
@@ -49,19 +51,26 @@ class CartItem {
         (product['sale_price'] ?? product['price'])?.toString() ??
         '0.0';
 
-    // Logic: Build variant description
+    // Logic: Build variant description safely
     String? variantDesc;
     if (variant != null && variant['attribute_options'] != null) {
-      final options = (variant['attribute_options'] as List)
-          .map((opt) => '${opt['attribute']['name']}: ${opt['value']}')
-          .join(', ');
-      variantDesc = options;
+      try {
+        final options = (variant['attribute_options'] as List).map((opt) {
+          final name = opt['attribute']?['name'] ?? 'Option';
+          final val = opt['value'] ?? '';
+          return '$name: $val';
+        }).join(', ');
+        if (options.isNotEmpty) variantDesc = options;
+      } catch (e) {
+        // Fallback if structure differs slightly
+        variantDesc = "Variant Selected";
+      }
     }
 
     return CartItem(
       id: json['id'],
-      productId: product['id'],
-      productName: product['name'] ?? 'No Name',
+      productId: product['id'] ?? 0,
+      productName: product['name'] ?? 'Unknown Product',
       price: double.tryParse(priceString.toString()) ?? 0.0,
       quantity: int.tryParse(json['quantity'].toString()) ?? 1,
       imageUrl: imgUrl,
@@ -110,7 +119,7 @@ class CartProvider with ChangeNotifier {
     if (auth.isAuthenticated && !_hasFetchedData) {
       fetchCart();
     }
-    // If user logs out, clear cart
+    // If user logs out, clear local cart state
     if (!auth.isAuthenticated && _hasFetchedData) {
       clearLocal();
     }
@@ -125,8 +134,8 @@ class CartProvider with ChangeNotifier {
       _items = cartData.map((itemData) => CartItem.fromJson(itemData)).toList();
       _error = null;
     } catch (e) {
-      _error = e.toString();
-      // Keep old items on error or empty? Usually better to keep old or show error
+      print("Cart Fetch Error: $e");
+      _error = "Could not load cart";
     }
     _isLoading = false;
     notifyListeners();
@@ -135,7 +144,6 @@ class CartProvider with ChangeNotifier {
   // --- Add to Cart Methods ---
 
   Future<void> addVariantToCart(int variantId, int quantity) async {
-    // Optimistic Update (Optional) or just wait for server
     final success = await _cartService.addVariantToCart(
         variantId: variantId, quantity: quantity, token: _auth.token);
     if (success) {
@@ -151,7 +159,40 @@ class CartProvider with ChangeNotifier {
     }
   }
 
-  // --- Modification Methods matching UI aliases ---
+  // --- DELETE FEATURE (Fixed) ---
+
+  Future<void> removeCartItem(int cartItemId) async {
+    // 1. Snapshot State for Rollback
+    final existingIndex = _items.indexWhere((i) => i.id == cartItemId);
+    CartItem? removedItem;
+
+    if (existingIndex != -1) {
+      removedItem = _items[existingIndex];
+      // Optimistic Remove: Update UI immediately
+      _items.removeAt(existingIndex);
+      notifyListeners();
+    } else {
+      return; // Item doesn't exist locally
+    }
+
+    try {
+      // 2. Server Call
+      final success = await _cartService.removeItem(cartItemId, _auth.token);
+
+      // 3. Rollback if server fails
+      if (!success) {
+        _items.insert(existingIndex, removedItem!);
+        notifyListeners();
+      }
+    } catch (e) {
+      // On Exception (Network error), rollback
+      _items.insert(existingIndex, removedItem!);
+      notifyListeners();
+      print("Remove Item Error: $e");
+    }
+  }
+
+  // --- UPDATE QUANTITY ---
 
   Future<void> updateCartItemQuantity(int cartItemId, int quantity) async {
     if (quantity < 1) {
@@ -159,65 +200,65 @@ class CartProvider with ChangeNotifier {
       return;
     }
 
-    // 1. Optimistic Update
     final index = _items.indexWhere((item) => item.id == cartItemId);
     int oldQuantity = 0;
+
     if (index != -1) {
       oldQuantity = _items[index].quantity;
+      // Optimistic Update
       _items[index].quantity = quantity;
-      notifyListeners(); // Immediate UI update
+      notifyListeners();
     }
 
-    // 2. Server Call
-    final success =
-        await _cartService.updateQuantity(cartItemId, quantity, _auth.token);
+    try {
+      final success =
+          await _cartService.updateQuantity(cartItemId, quantity, _auth.token);
 
-    // 3. Rollback if failed
-    if (!success && index != -1) {
-      _items[index].quantity = oldQuantity;
-      notifyListeners();
-    } else if (success) {
-      // Optional: fetchCart() to be perfectly synced, or trust the optimistic update
+      if (!success && index != -1) {
+        // Rollback
+        _items[index].quantity = oldQuantity;
+        notifyListeners();
+      }
+    } catch (e) {
+      if (index != -1) {
+        _items[index].quantity = oldQuantity;
+        notifyListeners();
+      }
     }
   }
 
-  Future<void> removeCartItem(int cartItemId) async {
-    // 1. Optimistic Remove
-    final existingIndex = _items.indexWhere((i) => i.id == cartItemId);
-    CartItem? removedItem;
-    if (existingIndex != -1) {
-      removedItem = _items[existingIndex];
-      _items.removeAt(existingIndex);
-      notifyListeners();
-    }
-
-    // 2. Server Call
-    final success = await _cartService.removeItem(cartItemId, _auth.token);
-
-    // 3. Rollback
-    if (!success && removedItem != null) {
-      _items.insert(existingIndex, removedItem);
-      notifyListeners();
-    }
-  }
+  // --- CLEAR CART (Implemented) ---
 
   Future<void> clearCart() async {
-    // 1. Optimistic Clear
+    // 1. Snapshot for rollback
     final oldItems = List<CartItem>.from(_items);
+
+    // 2. Optimistic Clear
     _items.clear();
     notifyListeners();
 
-    // 2. Server Call (Assuming service has this method, if not, remove one by one or ignore)
-    // If your API doesn't have a 'clear' endpoint, you might need to loop remove
-    // For now, we assume simple local clear or implementation needed in service.
-    // If strictly no endpoint, we might just clear local state.
+    try {
+      // 3. Server Call
+      // Since most APIs don't have a "delete all" endpoint, we loop delete.
+      // Ideally, your backend should have a DELETE /cart endpoint.
+      // Using Future.wait to delete parallelly for speed.
 
-    // Example loop remove if no endpoint:
-    /*
-    for (var item in oldItems) {
-      await _cartService.removeItem(item.id, _auth.token);
+      final deleteFutures = oldItems
+          .map((item) => _cartService.removeItem(item.id, _auth.token))
+          .toList();
+
+      final results = await Future.wait(deleteFutures);
+
+      // If any deletion failed, we re-fetch to ensure state sync
+      if (results.any((success) => !success)) {
+        await fetchCart();
+      }
+    } catch (e) {
+      // On critical failure, restore items or re-fetch
+      _items = oldItems;
+      notifyListeners();
+      print("Clear Cart Error: $e");
     }
-    */
   }
 
   void clearLocal() {

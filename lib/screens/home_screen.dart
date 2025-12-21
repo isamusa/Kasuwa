@@ -31,8 +31,15 @@ import 'package:kasuwa/theme/app_theme.dart';
 // --- Utility Functions ---
 String storageUrl(String? path) {
   if (path == null || path.isEmpty) return '';
-  if (path.startsWith('http')) return path;
-  return '${AppConfig.fileBaseUrl}/$path';
+
+  // 1. If it's a Cloudinary URL (starts with http), return it as is.
+  if (path.startsWith('http') || path.startsWith('https')) {
+    return path;
+  }
+
+  // 2. If it's a legacy local path, build it using the main baseUrl.
+  // This removes the need for 'fileBaseUrl' in AppConfig.
+  return '${AppConfig.baseUrl}/storage/$path';
 }
 
 void _showLoginPrompt(BuildContext context) {
@@ -928,7 +935,7 @@ class ModernProductCard extends StatelessWidget {
                           currencyFormatter
                               .format(product.salePrice ?? product.price),
                           style: const TextStyle(
-                              fontSize: 14,
+                              fontSize: 16,
                               fontWeight: FontWeight.w800,
                               color: AppTheme.primaryColor),
                         ),
@@ -938,7 +945,7 @@ class ModernProductCard extends StatelessWidget {
                             style: const TextStyle(
                                 decoration: TextDecoration.lineThrough,
                                 color: Colors.grey,
-                                fontSize: 10),
+                                fontSize: 12),
                           ),
                       ],
                     ),

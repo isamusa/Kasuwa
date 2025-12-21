@@ -16,6 +16,8 @@ import 'package:kasuwa/providers/checkout_provider.dart';
 import 'package:kasuwa/providers/add_product_provider.dart';
 import 'package:kasuwa/providers/edit_product_provider.dart';
 import 'package:kasuwa/providers/password_reset_provider.dart';
+import 'package:kasuwa/providers/seller_order_provider.dart';
+
 // Import the main screens
 import 'package:kasuwa/screens/splash_screen.dart';
 import 'package:kasuwa/theme/app_theme.dart';
@@ -41,6 +43,9 @@ void main() {
         ChangeNotifierProvider(create: (context) => PasswordResetProvider()),
         ChangeNotifierProvider(create: (context) => CategoryProvider()),
         ChangeNotifierProvider(create: (context) => EditProductProvider()),
+        ChangeNotifierProvider(
+            create: (context) => SellerOrderProvider(
+                Provider.of<AuthProvider>(context, listen: false))),
         ChangeNotifierProxyProvider2<AuthProvider, CheckoutProvider,
             ProductProvider>(
           create: (context) => ProductProvider(

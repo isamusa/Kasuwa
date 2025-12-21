@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:kasuwa/config/app_config.dart';
@@ -204,21 +205,42 @@ class AuthService {
     }
   }
 
-  Future<bool> updateUserProfile(Map<String, dynamic> data) async {
-    final token = await getToken();
-    if (token == null) return false;
+  Future<Map<String, dynamic>> updateProfile({
+    required String token,
+    required String name,
+    required String phone,
+    File? image,
+  }) async {
+    final uri = Uri.parse('${AppConfig.apiBaseUrl}/user/update');
 
-    // THE FIX: Use the correct AppConfig.baseUrl
-    final response = await http.post(
-      Uri.parse('${AppConfig.apiBaseUrl}/profile'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode(data),
-    );
+    var request = http.MultipartRequest(
+        'POST', uri); // Using POST with _method=PUT usually safer in Laravel
 
-    return response.statusCode == 200;
+    request.headers.addAll({
+      'Authorization': 'Bearer $token',
+      'Accept': 'application/json',
+    });
+
+    request.fields['name'] = name;
+    request.fields['phone'] = phone;
+    request.fields['_method'] = 'PUT'; // Method spoofing
+
+    if (image != null) {
+      request.files.add(
+          await http.MultipartFile.fromPath('profile_picture', image.path));
+    }
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to update: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
   }
 }

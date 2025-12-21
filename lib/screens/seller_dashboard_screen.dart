@@ -6,15 +6,16 @@ import 'package:kasuwa/screens/add_product_screen.dart';
 import 'package:kasuwa/services/product_service.dart';
 import 'package:kasuwa/providers/dashboard_provider.dart';
 import 'package:kasuwa/screens/edit_shop.dart';
-import 'package:kasuwa/providers/notification_provider.dart';
 import 'package:kasuwa/screens/edit_product_screen.dart';
 import 'package:kasuwa/screens/contact_admin_screen.dart';
+import 'package:kasuwa/screens/login_screen.dart';
 import 'package:provider/provider.dart';
-//import 'package:kasuwa/screens/shop_notifications_screen.dart';
 import 'package:kasuwa/providers/auth_provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kasuwa/theme/app_theme.dart';
+import 'package:kasuwa/models/notification_model.dart';
+import 'package:kasuwa/screens/seller_orders_screen.dart';
 
 class SellerDashboardScreen extends StatefulWidget {
   const SellerDashboardScreen({super.key});
@@ -25,80 +26,109 @@ class SellerDashboardScreen extends StatefulWidget {
 class _SellerDashboardScreenState extends State<SellerDashboardScreen>
     with WidgetsBindingObserver {
   final ProductService _productService = ProductService();
-  final TextEditingController _searchController = TextEditingController();
-  String _selectedDateRange = 'Last 7 Days';
 
-  // Timer for live data refreshing
+  // Navigation State
+  int _selectedIndex = 0;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  // Data State
+  String _selectedDateRange = 'Last 7 Days';
   Timer? _refreshTimer;
+  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _inventorySearchController =
+      TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<DashboardProvider>(context, listen: false)
-          .fetchDashboardData();
-    });
-    _fetchData();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchData());
+    WidgetsBinding.instance.addObserver(this);
     _startTimer();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      // App has returned to the foreground, refresh data and restart the timer
       _fetchData();
       _startTimer();
     } else {
-      // App is in the background or paused, stop the timer to save resources
       _stopTimer();
     }
   }
 
-  void _fetchData() {
-    // Ensure the provider is available before fetching
+  // --- CHANGED: Returns Future<void> for RefreshIndicator ---
+  Future<void> _fetchData() async {
     if (mounted) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      if (authProvider.isAuthenticated) {
-        Provider.of<DashboardProvider>(context, listen: false)
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      if (auth.isAuthenticated) {
+        await Provider.of<DashboardProvider>(context, listen: false)
             .fetchDashboardData();
       }
     }
   }
 
   void _startTimer() {
-    // Ensure any existing timer is stopped before starting a new one
     _stopTimer();
-    // Create a new timer that fetches data every 60 seconds
-    _refreshTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
-      print("Dashboard auto-refreshing...");
-      _fetchData();
-    });
+    _refreshTimer =
+        Timer.periodic(const Duration(minutes: 5), (_) => _fetchData());
   }
 
-  void _stopTimer() {
-    _refreshTimer?.cancel();
-  }
+  void _stopTimer() => _refreshTimer?.cancel();
 
   @override
   void dispose() {
-    _searchController.dispose();
-    _stopTimer(); // Always cancel the timer when the screen is disposed
-    WidgetsBinding.instance.removeObserver(this); // Clean up the observer
+    _inventorySearchController.dispose();
+    _scrollController.dispose();
+    _stopTimer();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  void _handleProductAction(Future<bool> Function() action,
-      String successMessage, String errorMessage) async {
-    final success = await action();
+  void _handleProductStatusToggle(int productId, bool currentStatus) async {
+    final success = await _productService.toggleProductStatus(productId);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success ? successMessage : errorMessage),
-        backgroundColor: success ? Colors.green : Colors.red,
-      ));
       if (success) {
-        Provider.of<DashboardProvider>(context, listen: false)
-            .fetchDashboardData();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Status updated"), backgroundColor: Colors.green));
+        _fetchData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Update failed"), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  void _handleProductDelete(int productId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Product"),
+        content: const Text(
+            "Are you sure you want to delete this product? This action cannot be undone."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel")),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Delete", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      final success = await _productService.deleteProduct(productId);
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text("Product deleted successfully"),
+              backgroundColor: Colors.green));
+          _fetchData();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text("Failed to delete product"),
+              backgroundColor: Colors.red));
+        }
       }
     }
   }
@@ -106,538 +136,672 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
   @override
   Widget build(BuildContext context) {
     return Consumer<DashboardProvider>(
-      builder: (context, dashboardProvider, child) {
+      builder: (context, provider, child) {
         return Scaffold(
-          backgroundColor: AppTheme.backgroundColor,
-          appBar: _buildAppBar(),
-          body: _buildBody(dashboardProvider),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => AddProductScreen()))
-                .then((_) => dashboardProvider.fetchDashboardData()),
-            backgroundColor: AppTheme.primaryColor,
-            child: const Icon(Icons.add, color: Colors.white),
-            tooltip: 'Add New Product',
-          ),
+          key: _scaffoldKey,
+          backgroundColor: const Color(0xFFF4F7FE),
+          drawer: _buildSidebar(context),
+          body: _buildMainContent(provider),
+          floatingActionButton: _selectedIndex == 1
+              ? FloatingActionButton.extended(
+                  onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const AddProductScreen()))
+                      .then((_) => provider.fetchDashboardData()),
+                  backgroundColor: AppTheme.primaryColor,
+                  elevation: 4,
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text("Add Product",
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, color: Colors.white)),
+                )
+              : null,
         );
       },
     );
   }
 
-  AppBar _buildAppBar() {
-    return AppBar(
-      flexibleSpace: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [AppTheme.primaryColor, AppTheme.primaryColor],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-      ),
-      title: const Text('My Dashboard',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-      elevation: 4,
-      shadowColor: Colors.black.withOpacity(0.2),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-          onPressed: () {
-            // Navigator.push(
-            //  context,
-            //    MaterialPageRoute(builder: (_) => const ShopNotificationScreen()),
-            //    );
-          },
-        ),
-        PopupMenuButton<String>(
-          onSelected: (value) => setState(() => _selectedDateRange = value),
-          icon: const Icon(Icons.more_vert, color: Colors.white),
-          itemBuilder: (context) => ['Last 7 Days', 'This Month', 'This Year']
-              .map((range) => PopupMenuItem(value: range, child: Text(range)))
-              .toList(),
-        ),
-      ],
-    );
-  }
+  // --- Sidebar Navigation ---
+  Widget _buildSidebar(BuildContext context) {
+    final user = Provider.of<AuthProvider>(context).user;
+    final name = user?['name'] ?? 'Seller';
+    final email = user?['email'] ?? '';
+    final avatar = user?['profile_picture_url'];
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
 
-  Widget _buildBody(DashboardProvider provider) {
-    if (provider.isLoading && provider.summary == null) {
-      return const Center(
-          child: CircularProgressIndicator(color: AppTheme.primaryColor));
-    }
-
-    if (provider.error != null) {
-      final errorMessage = provider.error!.toLowerCase();
-      final isOffline = errorMessage.contains('offline') ||
-          errorMessage.contains('socketexception') ||
-          errorMessage.contains('network is unreachable');
-
-      return _buildErrorWidget(
-        title: isOffline ? "You're Offline" : "An Error Occurred",
-        message: isOffline
-            ? "Please check your internet connection and try again."
-            : "We couldn't load your dashboard. Please try again later.",
-        icon: isOffline ? Icons.wifi_off_rounded : Icons.error_outline_rounded,
-        onRetry: () => provider.fetchDashboardData(),
-      );
-    }
-
-    if (provider.summary == null) {
-      return _buildErrorWidget(
-        title: "Authentication Required",
-        message: "Please log in to view your seller dashboard.",
-        icon: Icons.lock_outline_rounded,
-        onRetry: () =>
-            Provider.of<AuthProvider>(context, listen: false).refreshUser(),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: () => provider.fetchDashboardData(),
-      color: AppTheme.primaryColor,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+    return Drawer(
+      child: Column(
         children: [
-          _buildSummarySection(provider.summary!),
-          const SizedBox(height: 24),
-          _buildSalesChartSection(provider.salesData),
-          const SizedBox(height: 24),
-          _buildActivitySection(provider.notifications),
-          const SizedBox(height: 24),
-          _buildShopManagementSection(),
-          const SizedBox(height: 24),
-          _buildProductsSection(provider),
+          UserAccountsDrawerHeader(
+            decoration: const BoxDecoration(
+                gradient: LinearGradient(
+              colors: [AppTheme.primaryColor, Color(0xFF4A148C)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            )),
+            accountName: Text(name,
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            accountEmail:
+                Text(email, style: const TextStyle(color: Colors.white70)),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.white,
+              backgroundImage:
+                  (avatar != null) ? CachedNetworkImageProvider(avatar) : null,
+              child: (avatar == null)
+                  ? const Icon(Icons.person,
+                      size: 40, color: AppTheme.primaryColor)
+                  : null,
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                _buildDrawerItem(0, "Dashboard", Icons.dashboard_outlined),
+                _buildDrawerItem(1, "Inventory", Icons.inventory_2_outlined),
+                _buildDrawerItem(2, "Orders", Icons.shopping_bag_outlined),
+                const Divider(),
+                const Padding(
+                  padding: EdgeInsets.only(left: 16, top: 16, bottom: 8),
+                  child: Text("SHOP MANAGEMENT",
+                      style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
+                ),
+                _buildDrawerItem(3, "Shop Profile", Icons.storefront_outlined),
+                _buildDrawerItem(4, "Support", Icons.support_agent_outlined),
+              ],
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text("Logout",
+                style:
+                    TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            onTap: () {
+              Provider.of<AuthProvider>(context, listen: false).logout();
+              Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false);
+            },
+          ),
+          SizedBox(height: 20 + bottomPadding),
         ],
       ),
     );
   }
 
-  Widget _buildErrorWidget(
-      {required String title,
-      required String message,
-      required IconData icon,
-      required VoidCallback onRetry}) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 80, color: Colors.grey[400]),
-            const SizedBox(height: 24),
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 16, color: Colors.grey[600], height: 1.5)),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              label: const Text('Retry', style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryColor,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30)),
+  Widget _buildDrawerItem(int index, String title, IconData icon) {
+    final isSelected = _selectedIndex == index;
+    return ListTile(
+      leading: Icon(icon,
+          color: isSelected ? AppTheme.primaryColor : Colors.grey[600]),
+      title: Text(title,
+          style: TextStyle(
+              color: isSelected ? AppTheme.primaryColor : Colors.grey[800],
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500)),
+      selected: isSelected,
+      selectedTileColor: AppTheme.primaryColor.withOpacity(0.05),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.horizontal(right: Radius.circular(20))),
+      onTap: () {
+        setState(() => _selectedIndex = index);
+        Navigator.pop(context);
+      },
+    );
+  }
+
+  // --- Main Content Switcher ---
+  Widget _buildMainContent(DashboardProvider provider) {
+    if (provider.isLoading && provider.summary == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (provider.error != null && provider.summary == null) {
+      return Center(child: Text("Error: ${provider.error}"));
+    }
+
+    final summary = provider.summary!;
+    final currency =
+        NumberFormat.currency(locale: 'en_NG', symbol: '₦', decimalDigits: 0);
+
+    switch (_selectedIndex) {
+      case 0:
+        return _buildDashboardView(provider, summary, currency);
+      case 1:
+        return _buildInventoryView(provider, currency);
+      case 2:
+        return _buildOrdersView(provider);
+      case 3:
+        return const EditShopProfileScreen();
+      case 4:
+        return const ContactAdminScreen();
+      default:
+        return _buildDashboardView(provider, summary, currency);
+    }
+  }
+
+  // --- VIEW 1: Dashboard Overview ---
+  Widget _buildDashboardView(DashboardProvider provider,
+      DashboardSummary summary, NumberFormat currency) {
+    final double bottomPadding = 80 + MediaQuery.of(context).padding.bottom;
+
+    // --- CHANGED: Added RefreshIndicator ---
+    return RefreshIndicator(
+      onRefresh: _fetchData,
+      color: AppTheme.primaryColor,
+      child: CustomScrollView(
+        controller: _scrollController,
+        // Important: Allows pull-to-refresh even if content is short
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 220.0,
+            floating: false,
+            pinned: true,
+            elevation: 0,
+            backgroundColor: AppTheme.primaryColor,
+            leading: IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            ),
+            flexibleSpace: FlexibleSpaceBar(
+              background: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppTheme.primaryColor, Color(0xFF311B92)],
+                    begin: Alignment.bottomLeft,
+                    end: Alignment.topRight,
+                  ),
+                ),
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 60, 24, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20)),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.calendar_today,
+                                      size: 12, color: Colors.white),
+                                  const SizedBox(width: 4),
+                                  Text(_selectedDateRange,
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 12)),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.trending_up,
+                                color: Colors.greenAccent),
+                          ],
+                        ),
+                        const Spacer(),
+                        const Text("Total Revenue",
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 14)),
+                        const SizedBox(height: 8),
+                        Text(currency.format(summary.totalRevenue),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 36,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: -1.0)),
+                        const SizedBox(height: 8),
+                        Text("${summary.totalOrders} total orders processed",
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            )
+            ),
+            title: const Text("Overview"),
+            centerTitle: true,
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildQuickStatsGrid(summary),
+                  const SizedBox(height: 24),
+                  _buildChartSection(provider.salesData),
+                  const SizedBox(height: 24),
+                  _buildRecentActivity(provider.notifications),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Recent Products",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                      TextButton(
+                        onPressed: () => setState(() => _selectedIndex = 1),
+                        child: const Text("View All"),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          _buildProductListSliver(
+              provider.filteredProducts.take(5).toList(), currency,
+              isPreview: true),
+          SliverPadding(padding: EdgeInsets.only(bottom: bottomPadding)),
+        ],
+      ),
+    );
+  }
+
+  // --- VIEW 2: Inventory ---
+  Widget _buildInventoryView(
+      DashboardProvider provider, NumberFormat currency) {
+    final double bottomPadding = 100 + MediaQuery.of(context).padding.bottom;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Inventory",
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.menu, color: Colors.black),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: TextField(
+              controller: _inventorySearchController,
+              onChanged: (val) => provider.filterProducts(val),
+              decoration: InputDecoration(
+                hintText: "Search products...",
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.grey[100],
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+        ),
+      ),
+      // --- CHANGED: Added RefreshIndicator ---
+      body: RefreshIndicator(
+        onRefresh: _fetchData,
+        color: AppTheme.primaryColor,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver:
+                  _buildProductListSliver(provider.filteredProducts, currency),
+            ),
+            SliverPadding(padding: EdgeInsets.only(bottom: bottomPadding)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSummarySection(DashboardSummary summary) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  // --- VIEW 3: Orders ---
+  Widget _buildOrdersView(DashboardProvider provider) {
+    return const SellerOrdersScreen();
+  }
+
+  // --- Components ---
+
+  Widget _buildProductListSliver(
+      List<SellerProduct> products, NumberFormat currency,
+      {bool isPreview = false}) {
+    if (products.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Text("No products found",
+                style: TextStyle(color: Colors.grey[500])),
+          ),
+        ),
+      );
+    }
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final product = products[index];
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ],
+            ),
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: product.imageUrl,
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => Container(
+                      color: Colors.grey[100], child: const Icon(Icons.image)),
+                ),
+              ),
+              title: Text(product.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Text(product.price,
+                      style: const TextStyle(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      _buildTag(
+                          label: "Stock: ${product.stockQuantity}",
+                          color: product.stockQuantity > 0
+                              ? Colors.green
+                              : Colors.red),
+                      const SizedBox(width: 8),
+                      _buildTag(
+                          label: product.isActive ? "Active" : "Hidden",
+                          color: product.isActive ? Colors.blue : Colors.grey),
+                    ],
+                  )
+                ],
+              ),
+              trailing: PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, color: Colors.grey),
+                onSelected: (v) {
+                  if (v == 'edit') {
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => EditProductScreen(
+                                productId: product.id))).then((_) =>
+                        context.read<DashboardProvider>().fetchDashboardData());
+                  } else if (v == 'toggle') {
+                    _handleProductStatusToggle(product.id, product.isActive);
+                  } else if (v == 'delete') {
+                    _handleProductDelete(product.id);
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                      value: 'edit',
+                      child: Row(children: [
+                        Icon(Icons.edit, size: 18),
+                        SizedBox(width: 8),
+                        Text("Edit")
+                      ])),
+                  PopupMenuItem(
+                      value: 'toggle',
+                      child: Row(children: [
+                        Icon(
+                            product.isActive
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18),
+                        const SizedBox(width: 8),
+                        Text(product.isActive ? "Deactivate" : "Activate")
+                      ])),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(children: [
+                      Icon(Icons.delete, size: 18, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text("Delete", style: TextStyle(color: Colors.red))
+                    ]),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+        childCount: products.length,
+      ),
+    );
+  }
+
+  // ... (Rest of your existing helper widgets like _buildTag, _buildQuickStatsGrid, etc. remain unchanged) ...
+  Widget _buildTag({required String label, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildQuickStatsGrid(DashboardSummary summary) {
+    return Row(
       children: [
-        Text(_selectedDateRange,
-            style: TextStyle(
-                color: Colors.grey[700],
-                fontWeight: FontWeight.bold,
-                fontSize: 16)),
-        const SizedBox(height: 12),
-        // Use Wrap for a responsive layout
-        Wrap(
-          spacing: 16, // Horizontal space
-          runSpacing: 16, // Vertical space
-          children: [
-            _buildStatCard(
-                'Total Revenue',
-                NumberFormat.currency(locale: 'en_NG', symbol: '₦')
-                    .format(summary.totalRevenue),
-                Icons.monetization_on_outlined,
-                Colors.green.shade600),
-            _buildStatCard('Pending Orders', summary.pendingOrders.toString(),
-                Icons.pending_actions_outlined, Colors.orange.shade700),
-          ],
-        )
+        Expanded(
+            child: _buildStatCard("Total Orders", "${summary.totalOrders}",
+                Icons.shopping_bag_outlined, Colors.blue)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: _buildStatCard("Pending", "${summary.pendingOrders}",
+                Icons.access_time, Colors.orange)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: _buildStatCard("Products", "${summary.totalProducts}",
+                Icons.inventory_2_outlined, Colors.purple)),
       ],
     );
   }
 
   Widget _buildStatCard(
-      String title, String value, IconData icon, Color color) {
-    return Card(
-      elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.08),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Row(
-          mainAxisSize: MainAxisSize.min, // Ensure card takes minimum space
-          children: [
-            Icon(icon, size: 25, color: color),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                Text(title,
-                    style: TextStyle(fontSize: 10, color: Colors.grey[600])),
-              ],
-            ),
-          ],
-        ),
+      String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4))
+        ],
       ),
-    );
-  }
-
-  Widget _buildSalesChartSection(List<FlSpot> salesData) {
-    return Card(
-      elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.08),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Sales Chart',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary)),
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 150,
-              child: salesData.isEmpty
-                  ? Center(child: Text("No sales data available."))
-                  : BarChart(
-                      BarChartData(
-                        alignment: BarChartAlignment.spaceAround,
-                        maxY: salesData
-                                .map((e) => e.y)
-                                .reduce((a, b) => a > b ? a : b) *
-                            1.2,
-                        barTouchData: BarTouchData(enabled: true),
-                        titlesData: const FlTitlesData(show: true),
-                        borderData: FlBorderData(show: true),
-                        gridData: const FlGridData(show: true),
-                        barGroups: salesData.asMap().entries.map((e) {
-                          return BarChartGroupData(
-                            x: e.key,
-                            barRods: [
-                              BarChartRodData(
-                                  toY: e.value.y,
-                                  color: AppTheme.primaryColor,
-                                  width: 15,
-                                  borderRadius: BorderRadius.circular(4))
-                            ],
-                          );
-                        }).toList(),
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActivitySection(List<AppNotification> notifications) {
-    return Card(
-      elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Recent Activity',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary)),
-              TextButton(
-                  onPressed: () {
-                    //  Navigator.push(
-                    //  context,
-                    //MaterialPageRoute(
-                    //  builder: (_) => const ShopNotificationScreen()),
-                    // );
-                  },
-                  child: const Text('View All'))
-            ]),
-            const SizedBox(height: 8),
-            if (notifications.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24.0),
-                child: Center(
-                    child: Text("No recent activity.",
-                        style: TextStyle(color: Colors.grey[600]))),
-              )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: notifications.take(3).length,
-                itemBuilder: (context, index) {
-                  final notification = notifications[index];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-                      child: const Icon(Icons.receipt_long_outlined,
-                          color: AppTheme.primaryColor),
-                    ),
-                    title: Text(notification.title,
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(notification.message),
-                    trailing: Text(timeago.format(notification.createdAt),
-                        style:
-                            TextStyle(fontSize: 12, color: Colors.grey[600])),
-                  );
-                },
-                separatorBuilder: (ctx, i) => const Divider(height: 1),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildShopManagementSection() {
-    return Card(
-      elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('Shop Management',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary)),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(icon, size: 20, color: color),
           ),
-          ListTile(
-            leading: const Icon(Icons.edit_note_outlined,
-                color: AppTheme.primaryColor),
-            title: const Text('Edit Shop Profile'),
-            subtitle:
-                const Text('Update your shop name, description, and logo.'),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const EditShopProfileScreen()));
-            },
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          ListTile(
-            leading: const Icon(Icons.support_agent_outlined,
-                color: AppTheme.primaryColor),
-            title: const Text('Contact Admin'),
-            subtitle:
-                const Text('Get help with orders, payments, or your account.'),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const ContactAdminScreen()));
-            },
+          const SizedBox(height: 12),
+          Text(value,
+              style:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(label,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartSection(List<FlSpot> data) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 15,
+              offset: const Offset(0, 5))
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Sales Analytics",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 24),
+          AspectRatio(
+            aspectRatio: 1.7,
+            child: data.isEmpty
+                ? Center(
+                    child: Text("No sales data yet",
+                        style: TextStyle(color: Colors.grey[400])))
+                : BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      gridData: const FlGridData(show: false),
+                      borderData: FlBorderData(show: false),
+                      titlesData: FlTitlesData(
+                        leftTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (val, meta) {
+                              const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+                              if (val.toInt() < days.length) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8.0),
+                                  child: Text(days[val.toInt()],
+                                      style: TextStyle(
+                                          color: Colors.grey[400],
+                                          fontSize: 12)),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ),
+                      ),
+                      barGroups: data.asMap().entries.map((e) {
+                        return BarChartGroupData(
+                          x: e.key,
+                          barRods: [
+                            BarChartRodData(
+                              toY: e.value.y,
+                              color: AppTheme.primaryColor,
+                              width: 14,
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(6)),
+                              backDrawRodData: BackgroundBarChartRodData(
+                                show: true,
+                                toY: (data
+                                        .map((p) => p.y)
+                                        .reduce((a, b) => a > b ? a : b)) *
+                                    1.2,
+                                color: const Color(0xFFF0F0F0),
+                              ),
+                            )
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildProductsSection(DashboardProvider provider) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('My Products (${provider.filteredProducts.length})',
-                style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary)),
-            TextButton(onPressed: () {}, child: const Text('See All'))
-          ],
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _searchController,
-          onChanged: provider.filterProducts,
-          decoration: InputDecoration(
-            hintText: 'Search my products...',
-            prefixIcon: const Icon(Icons.search),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none),
-          ),
-        ),
-        const SizedBox(height: 16),
-        if (provider.filteredProducts.isEmpty)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 40),
-              child: Text(_searchController.text.isEmpty
-                  ? 'You have not added any products yet.'
-                  : 'No products found for "${_searchController.text}".'),
-            ),
-          )
-        else
-          ListView.builder(
+  Widget _buildRecentActivity(List<AppNotification> notifications) {
+    if (notifications.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Recent Activity",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 16),
+          ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: provider.filteredProducts.length,
+            itemCount: notifications.take(3).length,
+            separatorBuilder: (_, __) => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Divider(height: 1)),
             itemBuilder: (context, index) {
-              final product = provider.filteredProducts[index];
-              return _buildProductListItem(product);
+              final notif = notifications[index];
+              return Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                        color: Colors.blue[50], shape: BoxShape.circle),
+                    child: Icon(Icons.notifications_active_outlined,
+                        size: 16, color: Colors.blue[700]),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(notif.title,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 13)),
+                        Text(timeago.format(notif.createdAt),
+                            style: TextStyle(
+                                color: Colors.grey[500], fontSize: 11)),
+                      ],
+                    ),
+                  )
+                ],
+              );
             },
           ),
-      ],
-    );
-  }
-
-  Widget _buildProductListItem(SellerProduct product) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.1),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: product.imageUrl,
-                    width: 60,
-                    height: 60,
-                    fit: BoxFit.cover,
-                    errorWidget: (c, o, s) => Container(
-                        width: 60,
-                        height: 60,
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.error)),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(product.name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 4),
-                      Text(product.price,
-                          style: const TextStyle(
-                              color: AppTheme.primaryColor,
-                              fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'edit') {
-                      Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      EditProductScreen(productId: product.id)))
-                          .then((_) {
-                        Provider.of<DashboardProvider>(context, listen: false)
-                            .fetchDashboardData();
-                      });
-                    } else if (value == 'delete') {
-                      _handleProductAction(
-                          () => _productService.deleteProduct(product.id),
-                          'Product deleted.',
-                          'Failed to delete.');
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                    const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Delete',
-                            style: TextStyle(color: Colors.red))),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Stock: ${product.stockQuantity}',
-                    style: TextStyle(color: Colors.grey[700])),
-                Row(
-                  children: [
-                    Text(product.isActive ? 'Active' : 'Inactive',
-                        style: TextStyle(
-                            color:
-                                product.isActive ? Colors.green : Colors.grey,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 8),
-                    Switch(
-                      value: product.isActive,
-                      onChanged: (value) => _handleProductAction(
-                          () => _productService.toggleProductStatus(product.id),
-                          'Status updated.',
-                          'Failed to update.'),
-                      activeColor: AppTheme.primaryColor,
-                    ),
-                  ],
-                ),
-              ],
-            )
-          ],
-        ),
+        ],
       ),
     );
   }

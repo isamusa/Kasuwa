@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:kasuwa/services/auth_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -10,6 +11,7 @@ class AuthProvider with ChangeNotifier {
   Map<String, dynamic>? _user;
   bool _isAuthenticated = false;
   bool _isInitializing = true;
+  bool _isLoading = false;
 
   bool get isInitializing => _isInitializing;
   bool get isAuthenticated => _isAuthenticated;
@@ -108,17 +110,32 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateUserProfile(Map<String, dynamic> data) async {
+  Future<bool> updateProfile(String name, String phone, File? image) async {
+    _isLoading = true;
+    notifyListeners();
+
     try {
-      final result = await _authService.updateUserProfile(data);
-      if (result) {
-        await refreshUser();
-        return true;
+      final data = await _authService.updateProfile(
+        token: _token!,
+        name: name,
+        phone: phone,
+        image: image,
+      );
+
+      // Update local user object with the fresh data from server
+      if (data['user'] != null) {
+        _user = data['user'];
+        // Ideally, update SharedPreferences 'userData' here too for persistence
       }
-      return false;
+
+      _isLoading = false;
+      notifyListeners();
+      return true;
     } catch (e) {
-      print("Error updating user profile: $e");
-      return false;
+      _isLoading = false;
+      notifyListeners();
+      print("Update Profile Error: $e");
+      return false; // Or throw error to show in UI
     }
   }
 }

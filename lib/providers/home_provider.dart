@@ -8,7 +8,14 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 String storageUrl(String? path) {
   if (path == null || path.isEmpty) return '';
-  return '${AppConfig.fileBaseUrl}/$path';
+
+  // 1. If it's already a full URL (Cloudinary), return it as is.
+  if (path.startsWith('http') || path.startsWith('https')) {
+    return path;
+  }
+
+  // 2. If it's a legacy relative path, prepend the Render base URL.
+  return '${AppConfig.baseUrl}/storage/$path';
 }
 
 // --- Data Models (With toJson for caching) ---

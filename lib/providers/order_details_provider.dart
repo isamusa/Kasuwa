@@ -1,18 +1,24 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:kasuwa/config/app_config.dart';
 import 'package:kasuwa/services/order_details_service.dart';
 import 'package:kasuwa/providers/auth_provider.dart';
 import 'package:kasuwa/services/checkout_service.dart';
-
+import 'package:http/http.dart' as http; // Added for API calls
 import 'dart:convert';
 
+// --- Helper Function ---
 String storageUrl(String? path) {
   if (path == null || path.isEmpty) return '';
-  return '${AppConfig.fileBaseUrl}/$path';
+  if (path.startsWith('http') || path.startsWith('https')) {
+    return path;
+  }
+  return '${AppConfig.baseUrl}/storage/$path';
 }
 
-// --- Data Models for this Screen ---
+// --- Data Models ---
 class OrderDetailItem {
   final int productId;
   final String productName;
@@ -95,7 +101,6 @@ class OrderDetail {
   });
 
   factory OrderDetail.fromJson(Map<String, dynamic> json) {
-    // 1. SAFE PARSING: Handle Shipping Address (String, Map, or Null)
     Map<String, dynamic> shippingAddressData = {};
     if (json['shipping_address'] != null) {
       if (json['shipping_address'] is String) {
@@ -110,7 +115,6 @@ class OrderDetail {
       }
     }
 
-    // 2. SAFE PARSING: Handle Numbers (String or num)
     double parseDouble(dynamic value) {
       if (value == null) return 0.0;
       return double.tryParse(value.toString()) ?? 0.0;
@@ -181,7 +185,6 @@ class OrderDetailsProvider with ChangeNotifier {
       _order = await _orderService.getOrderDetails(orderId, token);
     } catch (e) {
       _error = e.toString();
-      // Clean up error message for UI
       if (_error!.contains("Exception:")) {
         _error = _error!.replaceAll("Exception:", "").trim();
       }
@@ -221,6 +224,46 @@ class OrderDetailsProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> submitReturnRequest({
+    required int orderId,
+    required String reason,
+    required String comment,
+    required File evidence,
+  }) async {
+    final token = _auth.token;
+    final url = Uri.parse('${AppConfig.apiBaseUrl}/orders/$orderId/return');
+
+    try {
+      var request = http.MultipartRequest('POST', url);
+      request.headers.addAll({
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+
+      request.fields['reason'] = reason;
+      request.fields['comment'] = comment;
+
+      // Add image file
+      request.files.add(await http.MultipartFile.fromPath(
+        'evidence',
+        evidence.path,
+      ));
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      } else {
+        print("Return Request Failed: ${response.body}");
+        return false;
+      }
+    } catch (e) {
+      print("Return Request Error: $e");
+      return false;
+    }
+  }
+
   Future<bool> confirmDelivery() async {
     if (_order == null || _isConfirming) return false;
 
@@ -234,7 +277,6 @@ class OrderDetailsProvider with ChangeNotifier {
 
       success = await _orderService.confirmOrderReceived(_order!.id, token);
       if (success) {
-        // Optimistically update status
         _order!.status = 'delivered';
       }
     } catch (e) {
@@ -244,5 +286,39 @@ class OrderDetailsProvider with ChangeNotifier {
     _isConfirming = false;
     notifyListeners();
     return success;
+  }
+
+  // --- NEW: Cancel Order Method ---
+  Future<bool> cancelOrder(int orderId) async {
+    final token = _auth.token;
+    if (token == null) return false;
+
+    // Use the Cancel Route defined in api.php
+    final url = Uri.parse('${AppConfig.apiBaseUrl}/orders/$orderId/cancel');
+
+    try {
+      final response = await http.put(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        // Optimistically update the local order status so the UI reflects it immediately
+        if (_order != null && _order!.id == orderId) {
+          _order!.status = 'cancelled';
+          notifyListeners();
+        }
+        return true;
+      } else {
+        print("Cancel failed: ${response.body}");
+        return false;
+      }
+    } catch (e) {
+      print("Cancel Order Error: $e");
+      return false;
+    }
   }
 }

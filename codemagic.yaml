@@ -1,0 +1,25 @@
+workflows:
+  build-ios-release:
+    name: Build iOS IPA
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install dependencies
+        script: |
+          flutter pub get
+          find . -name "Podfile" -exec dir {} \;
+          cd ios && pod install && cd ..
+      - name: Build iOS Archive
+        script: |
+          # Build without signing (since you have a free account)
+          flutter build ios --release --no-codesign
+      - name: Payload Package
+        script: |
+          cd build/ios/iphoneos
+          mkdir Payload
+          mv Runner.app Payload/
+          zip -r release_unsigned.ipa Payload
+    artifacts:
+      - build/ios/iphoneos/release_unsigned.ipa

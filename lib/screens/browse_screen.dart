@@ -1,91 +1,219 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
-import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 import 'package:kasuwa/screens/search_screen.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:provider/provider.dart';
 import 'package:kasuwa/providers/category_provider.dart';
-import 'package:kasuwa/services/category_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kasuwa/theme/app_theme.dart';
-import 'package:kasuwa/screens/home_screen.dart';
+import 'package:kasuwa/screens/product_list_screen.dart';
+import 'package:kasuwa/screens/home_screen.dart'; // Required for back navigation
+import 'package:kasuwa/config/app_config.dart';
 
-// --- The Main UI Screen ---
+// Helper for safe image URLs
+String storageUrl(String? path) {
+  if (path == null || path.isEmpty) return '';
+  if (path.startsWith('http') || path.startsWith('https')) {
+    return path;
+  }
+  return '${AppConfig.baseUrl}/storage/$path';
+}
+
 class BrowseProductsScreen extends StatefulWidget {
   const BrowseProductsScreen({super.key});
 
   @override
-  _BrowseProductsScreenState createState() => _BrowseProductsScreenState();
+  State<BrowseProductsScreen> createState() => _BrowseProductsScreenState();
 }
 
-class _BrowseProductsScreenState extends State<BrowseProductsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  int _selectedCategoryIndex = 0;
+class _BrowseProductsScreenState extends State<BrowseProductsScreen> {
+  int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    Provider.of<CategoryProvider>(context, listen: false).fetchCategories();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<CategoryProvider>(context, listen: false).fetchCategories();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      // Use onPopInvokedWithResult here as well.
-      onPopInvokedWithResult: (bool didPop, _) {
-        if (didPop) {
-          return;
-        }
-
-        // Check if a previous screen exists in the stack.
-        if (Navigator.canPop(context)) {
-          // If yes, go back.
-          Navigator.pop(context);
-        } else {
-          // If no, go to the home screen.
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const EnhancedHomeScreen()),
-          );
-        }
+    // 1. Handle System Back Gesture -> Go Home
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const EnhancedHomeScreen()),
+          (route) => false,
+        );
+        return false;
       },
       child: Scaffold(
-        backgroundColor: AppTheme.backgroundColor,
+        backgroundColor: Colors.white,
         appBar: AppBar(
-          title: Text('Discover',
-              style: TextStyle(
-                  fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-          backgroundColor: AppTheme.surfaceColor,
           elevation: 0,
-          automaticallyImplyLeading: false,
-          bottom: TabBar(
-            controller: _tabController,
-            indicatorColor: AppTheme.primaryColor,
-            labelColor: AppTheme.primaryColor,
-            unselectedLabelColor: AppTheme.textSecondary,
-            labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            tabs: const [Tab(text: 'Categories'), Tab(text: 'Brands')],
+          backgroundColor: Colors.white,
+          title: _buildHeaderSearch(),
+          automaticallyImplyLeading: false, // Hides default back button
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1.0),
+            child: Container(color: Colors.grey[200], height: 1.0),
           ),
         ),
-        body: Column(
+        body: Consumer<CategoryProvider>(
+          builder: (context, provider, child) {
+            // Loading State
+            if (provider.isLoading && provider.mainCategories.isEmpty) {
+              return _buildLoading();
+            }
+
+            // Error / Empty State
+            if (provider.mainCategories.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.category_outlined,
+                        size: 64, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    const Text("No categories found",
+                        style: TextStyle(color: Colors.grey)),
+                    const SizedBox(height: 16),
+                    TextButton.icon(
+                      onPressed: () =>
+                          provider.fetchCategories(forceRefresh: true),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text("Retry"),
+                    )
+                  ],
+                ),
+              );
+            }
+
+            final mainCategories = provider.mainCategories;
+            // Safety check for index out of bounds
+            if (_selectedIndex >= mainCategories.length) _selectedIndex = 0;
+            final selectedCategory = mainCategories[_selectedIndex];
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // --- LEFT SIDEBAR (Main Categories) ---
+                Container(
+                  width: 110,
+                  color: const Color(0xFFF7F8FA),
+                  child: ListView.separated(
+                    itemCount: mainCategories.length,
+                    separatorBuilder: (ctx, i) =>
+                        const Divider(height: 1, color: Colors.transparent),
+                    itemBuilder: (context, index) {
+                      return _SidebarItem(
+                        category: mainCategories[index],
+                        isSelected: _selectedIndex == index,
+                        onTap: () => setState(() => _selectedIndex = index),
+                      );
+                    },
+                  ),
+                ),
+
+                // --- RIGHT CONTENT (Subcategories) ---
+                Expanded(
+                  child: Container(
+                    color: Colors.white,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        // Header Row
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                selectedCategory.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 18,
+                                    color: Colors.black87),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => ProductListScreen(
+                                            categoryId: selectedCategory.id,
+                                            categoryName:
+                                                selectedCategory.name)));
+                              },
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppTheme.primaryColor,
+                              ),
+                              child: const Text("View All",
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                            )
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Subcategories Grid
+                        if (selectedCategory.subcategories.isEmpty)
+                          _buildEmptySubCategoryState(selectedCategory)
+                        else
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 0.8,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 16,
+                            ),
+                            itemCount: selectedCategory.subcategories.length,
+                            itemBuilder: (context, index) {
+                              final sub = selectedCategory.subcategories[index];
+                              return _SubCategoryCard(subCategory: sub);
+                            },
+                          ),
+
+                        const SizedBox(height: 80), // Bottom Padding
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderSearch() {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const SearchScreen())),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
           children: [
-            _buildSearchBar(),
+            Icon(Icons.search, size: 22, color: Colors.grey[600]),
+            const SizedBox(width: 10),
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildCategoriesView(),
-                  _buildBrandsView(),
-                ],
+              child: Text(
+                "Search categories, products...",
+                style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -94,250 +222,234 @@ class _BrowseProductsScreenState extends State<BrowseProductsScreen>
     );
   }
 
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: GestureDetector(
-        onTap: () => Navigator.push(
-            context, MaterialPageRoute(builder: (_) => SearchScreen())),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-              color: AppTheme.surfaceColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!)),
-          child: Row(children: [
-            Icon(Icons.search, color: AppTheme.textSecondary),
-            SizedBox(width: 8),
-            Text('Search products and brands...',
-                style: TextStyle(color: AppTheme.textSecondary))
-          ]),
-        ),
+  Widget _buildEmptySubCategoryState(dynamic category) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+      alignment: Alignment.center,
+      child: Column(
+        children: [
+          Icon(Icons.layers_clear_outlined, size: 48, color: Colors.grey[300]),
+          const SizedBox(height: 12),
+          Text(
+            "No subcategories in ${category.name}",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey[500], fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: () {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => ProductListScreen(
+                          categoryId: category.id,
+                          categoryName: category.name)));
+            },
+            style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppTheme.primaryColor),
+                foregroundColor: AppTheme.primaryColor),
+            child: const Text("Browse All Products"),
+          )
+        ],
       ),
     );
   }
 
-  Widget _buildCategoriesView() {
-    return Consumer<CategoryProvider>(
-      builder: (context, provider, child) {
-        if (provider.isLoading && provider.mainCategories.isEmpty) {
-          return _buildLoadingSkeleton();
-        }
-        if (provider.mainCategories.isEmpty && !provider.isLoading) {
-          return Center(
-              child: Text("No categories found. Pull down to refresh."));
-        }
-        return RefreshIndicator(
-          onRefresh: () => provider.fetchCategories(forceRefresh: true),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildCategoryList(provider.mainCategories),
-              _buildSubcategoryContent(provider.mainCategories),
-            ],
+  Widget _buildLoading() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Sidebar Loading
+        Container(
+          width: 110,
+          color: const Color(0xFFF7F8FA),
+          child: ListView.builder(
+            itemCount: 8,
+            itemBuilder: (_, __) => Shimmer.fromColors(
+              baseColor: Colors.grey[300]!,
+              highlightColor: Colors.grey[100]!,
+              child: Container(
+                height: 60,
+                margin: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
           ),
-        );
-      },
+        ),
+        // Grid Loading
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Shimmer.fromColors(
+                  baseColor: Colors.grey[300]!,
+                  highlightColor: Colors.grey[100]!,
+                  child: Container(height: 20, width: 150, color: Colors.white),
+                ),
+                const SizedBox(height: 20),
+                Expanded(
+                  child: Shimmer.fromColors(
+                    baseColor: Colors.grey[300]!,
+                    highlightColor: Colors.grey[100]!,
+                    child: GridView.count(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 0.8,
+                      children: List.generate(
+                          6,
+                          (index) => Container(
+                                decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12)),
+                              )),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
+}
 
-  Widget _buildSmallSubcategoryCard(SubCategory subcategory) {
+// --- WIDGET: Sidebar Item ---
+class _SidebarItem extends StatelessWidget {
+  final dynamic category;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SidebarItem({
+    required this.category,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        color: isSelected ? Colors.white : Colors.transparent,
+        child: IntrinsicHeight(
+          child: Row(
+            children: [
+              // Active Indicator Line
+              Container(
+                width: 4,
+                color: isSelected ? AppTheme.primaryColor : Colors.transparent,
+              ),
+              Expanded(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? Colors.white : Colors.transparent,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // You can add Icons here if your API returns them
+                      Text(
+                        category.name,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
+                          color: isSelected
+                              ? AppTheme.primaryColor
+                              : Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// --- WIDGET: SubCategory Card ---
+class _SubCategoryCard extends StatelessWidget {
+  final dynamic subCategory;
+
+  const _SubCategoryCard({required this.subCategory});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = storageUrl(subCategory.imageUrl);
+
     return GestureDetector(
       onTap: () {
-        // TODO: Navigate to products list for this subcategory
+        Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => ProductListScreen(
+                    categoryId: subCategory.id,
+                    categoryName: subCategory.name)));
       },
-      child: Container(
-        width: 80, // Define a fixed width for each card
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AspectRatio(
-              aspectRatio: 1, // Creates a square aspect ratio for the image
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ],
+              ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: CachedNetworkImage(
-                  imageUrl: subcategory.imageUrl,
+                  imageUrl: imageUrl,
                   fit: BoxFit.cover,
-                  placeholder: (context, url) => Shimmer.fromColors(
-                    baseColor: Colors.grey[300]!,
-                    highlightColor: Colors.grey[100]!,
-                    child: Container(color: Colors.white),
+                  width: double.infinity,
+                  placeholder: (context, url) => Container(
+                    color: Colors.grey[50],
+                    child: const Center(
+                        child: Icon(Icons.image, color: Colors.grey)),
                   ),
-                  errorWidget: (context, url, error) =>
-                      Icon(Icons.broken_image, color: Colors.grey[400]),
+                  errorWidget: (c, e, s) => Container(
+                    color: Colors.grey[50],
+                    child: const Icon(Icons.broken_image_outlined,
+                        color: Colors.grey),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              subcategory.name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryList(List<MainCategory> categories) {
-    return Container(
-      width: 110,
-      color: AppTheme.surfaceColor,
-      child: ListView.builder(
-        padding: const EdgeInsets.only(top: 16),
-        itemCount: categories.length,
-        itemBuilder: (context, index) {
-          final isSelected = _selectedCategoryIndex == index;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedCategoryIndex = index),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-              decoration: BoxDecoration(
-                gradient: isSelected
-                    ? LinearGradient(
-                        colors: [AppTheme.primaryLight, AppTheme.primaryColor],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight)
-                    : null,
-                color: isSelected ? null : AppTheme.backgroundColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  Icon(categories[index].icon,
-                      size: 28,
-                      color: isSelected ? Colors.white : AppTheme.textPrimary),
-                  const SizedBox(height: 8),
-                  Text(categories[index].name,
-                      style: TextStyle(
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.normal,
-                          color:
-                              isSelected ? Colors.white : AppTheme.textPrimary,
-                          fontSize: 12),
-                      textAlign: TextAlign.center),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildSubcategoryContent(List<MainCategory> mainCategories) {
-    if (_selectedCategoryIndex >= mainCategories.length) {
-      return Expanded(child: Center(child: CircularProgressIndicator()));
-    }
-
-    final selectedCategory = mainCategories[_selectedCategoryIndex];
-    final currentSubcategories = selectedCategory.subcategories;
-
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16.0),
-                child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(selectedCategory.name,
-                          style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary)),
-                      IconButton(
-                          icon: Icon(MdiIcons.filterVariant,
-                              color: AppTheme.primaryColor),
-                          onPressed: () {}),
-                    ]),
-              ),
-              if (currentSubcategories.isEmpty)
-                _buildEmptyState()
-              else
-                Wrap(
-                  spacing: 16.0, // Horizontal space between cards
-                  runSpacing: 16.0, // Vertical space between rows
-                  children: currentSubcategories
-                      .map((sub) => _buildSmallSubcategoryCard(sub))
-                      .toList(),
-                ),
-            ],
           ),
-        ),
+          const SizedBox(height: 8),
+          Text(
+            subCategory.name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+        ],
       ),
     );
-  }
-
-  Widget _buildLoadingSkeleton() {
-    return Row(children: [
-      Container(
-          width: 110,
-          child: Shimmer.fromColors(
-              baseColor: Colors.grey[300]!,
-              highlightColor: Colors.grey[100]!,
-              child: ListView.builder(
-                  itemCount: 6,
-                  itemBuilder: (ctx, i) => Container(
-                      height: 100,
-                      margin: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12)))))),
-      Expanded(
-          child: Shimmer.fromColors(
-              baseColor: Colors.grey[300]!,
-              highlightColor: Colors.grey[100]!,
-              child: MasonryGridView.count(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  padding: EdgeInsets.all(16),
-                  itemCount: 6,
-                  itemBuilder: (ctx, i) => Container(
-                      height: i.isEven ? 200 : 250,
-                      decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16)))))),
-    ]);
-  }
-
-  Widget _buildBrandsView() {
-    /* ... unchanged mock data implementation ... */ return Center(
-        child: Text("Brands View "));
-  }
-
-  Widget _buildEmptyState() {
-    /* ... unchanged implementation ... */ return Center(
-        child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 50.0),
-            child:
-                Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(MdiIcons.packageVariantRemove,
-                  size: 60, color: AppTheme.textSecondary),
-              SizedBox(height: 16),
-              Text('Coming Soon!',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary)),
-              SizedBox(height: 8),
-              Text('No subcategories have been added yet.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.textSecondary))
-            ])));
   }
 }

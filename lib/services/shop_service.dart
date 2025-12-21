@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:kasuwa/services/auth_service.dart'; // To get the token
 import 'package:kasuwa/config/app_config.dart';
@@ -55,37 +56,55 @@ class ShopService {
     }
   }
 
-  Future<bool> updateShopProfile(Map<String, String> data) async {
-    final token = await _authService.getToken();
-    if (token == null) {
-      print("Update failed: User not authenticated.");
-      return false;
+  Future<Map<String, dynamic>> updateShop({
+    required String token,
+    required String name,
+    required String description,
+    required String location,
+    required String phone,
+    File? logo,
+    File? banner,
+  }) async {
+    final uri = Uri.parse('${AppConfig.apiBaseUrl}/shop/update');
+
+    // Use MultipartRequest for file uploads
+    var request = http.MultipartRequest('POST', uri);
+
+    // Headers
+    request.headers.addAll({
+      'Authorization': 'Bearer $token',
+      'Accept': 'application/json',
+    });
+
+    // Fields
+    request.fields['name'] = name;
+    request.fields['description'] = description;
+    request.fields['location'] = location; // or address
+    request.fields['phone_number'] = phone;
+    request.fields['_method'] =
+        'PUT'; // Trick for Laravel to handle PUT with files
+
+    // Files
+    if (logo != null) {
+      request.files.add(await http.MultipartFile.fromPath('logo', logo.path));
+    }
+    if (banner != null) {
+      // FIX: Change field name to 'cover_photo' to match Laravel
+      request.files
+          .add(await http.MultipartFile.fromPath('cover_photo', banner.path));
     }
 
-    // We assume the backend has a dedicated endpoint for updating the user's own shop.
-    final url = Uri.parse('${AppConfig.apiBaseUrl}/shop/profile');
-
     try {
-      final response = await http.put(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(data),
-      );
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {
-        return true;
+        return {'success': true, 'message': 'Shop updated successfully'};
       } else {
-        print(
-            "Failed to update shop profile. Status: ${response.statusCode}, Body: ${response.body}");
-        return false;
+        return {'success': false, 'message': 'Failed: ${response.body}'};
       }
     } catch (e) {
-      print("Error updating shop profile: $e");
-      return false;
+      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 }

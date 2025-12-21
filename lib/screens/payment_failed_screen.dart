@@ -1,37 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:kasuwa/screens/home_screen.dart';
 import 'package:kasuwa/screens/my_orders_screen.dart';
+import 'package:kasuwa/screens/home_screen.dart';
 import 'package:kasuwa/theme/app_theme.dart';
 
-class PaymentSuccessScreen extends StatefulWidget {
-  const PaymentSuccessScreen({super.key});
-
-  @override
-  State<PaymentSuccessScreen> createState() => _PaymentSuccessScreenState();
-}
-
-class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-    _scaleAnimation =
-        CurvedAnimation(parent: _controller, curve: Curves.elasticOut);
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+class PaymentFailedScreen extends StatelessWidget {
+  const PaymentFailedScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -44,46 +17,39 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(),
-              // Animated Checkmark
-              ScaleTransition(
-                scale: _scaleAnimation,
-                child: Container(
-                  width: 140,
-                  height: 140,
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 100,
-                      height: 100,
-                      decoration: const BoxDecoration(
-                          color: Colors.green,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.greenAccent,
-                                blurRadius: 20,
-                                spreadRadius: 5)
-                          ]),
-                      child: const Icon(Icons.check,
-                          color: Colors.white, size: 60),
+              // Error Icon
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
                     ),
+                    child:
+                        const Icon(Icons.close, color: Colors.white, size: 50),
                   ),
                 ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
               const Text(
-                "Order Placed!",
+                "Payment Failed",
                 style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    color: AppTheme.textPrimary),
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
+                ),
               ),
               const SizedBox(height: 16),
               const Text(
-                "Thank you for your purchase.\nYour order has been received and is being processed.",
+                "Your payment was cancelled or could not be processed.\nDon't worry, your order has been saved.",
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16, color: Colors.grey, height: 1.5),
               ),
@@ -93,7 +59,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    // Navigate to Orders
+                    // Navigate to My Orders so they can see the pending order and retry
                     Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(builder: (_) => const MyOrdersScreen()),
                       (route) => route.isFirst,
@@ -105,9 +71,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16)),
                     elevation: 4,
-                    shadowColor: AppTheme.primaryColor.withOpacity(0.4),
                   ),
-                  child: const Text("Track Order",
+                  child: const Text("View Order & Retry",
                       style: TextStyle(
                           fontSize: 16,
                           color: Colors.white,
@@ -124,7 +89,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                     (route) => false,
                   );
                 },
-                child: const Text("Continue Shopping",
+                child: const Text("Go Home",
                     style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

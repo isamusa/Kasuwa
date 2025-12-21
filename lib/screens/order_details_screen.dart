@@ -10,6 +10,7 @@ import 'package:kasuwa/screens/payment_success_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kasuwa/theme/app_theme.dart';
+import 'package:kasuwa/screens/return_request_screen.dart';
 
 class OrderDetailsScreen extends StatefulWidget {
   final int orderId;
@@ -27,7 +28,10 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     super.initState();
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     _provider = OrderDetailsProvider(authProvider);
-    _provider.fetchOrderDetails(widget.orderId);
+    // Fetch data immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _provider.fetchOrderDetails(widget.orderId);
+    });
   }
 
   Future<void> _handleRetryPayment(BuildContext context) async {
@@ -57,23 +61,113 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   Future<void> _handleReorder(BuildContext context, OrderDetail order) async {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
 
-    // Show loading
     showDialog(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => const Center(child: CircularProgressIndicator()));
 
-    // Add items to cart
     for (var item in order.items) {
       await cartProvider.addProductToCart(item.productId, item.quantity);
     }
 
     if (!mounted) return;
-    Navigator.pop(context); // Close loading
+    Navigator.pop(context);
 
-    // Go to Cart
     Navigator.push(
         context, MaterialPageRoute(builder: (_) => const CartScreen()));
+  }
+
+  Future<void> _handleCancelOrder(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Cancel Order"),
+        content: const Text(
+            "Are you sure you want to cancel this order? This action cannot be undone."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("No, Keep it")),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Yes, Cancel",
+                  style: TextStyle(
+                      color: Colors.red, fontWeight: FontWeight.bold))),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      final success = await _provider.cancelOrder(widget.orderId);
+
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Order cancelled successfully"),
+            backgroundColor: Colors.green));
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Failed to cancel order. Please try again."),
+            backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  // --- NEW: Handle Return Request ---
+  Future<void> _handleReturnRequest(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Text("Request Return"),
+          ],
+        ),
+        content:
+            const Text("You are about to request a return for this order. \n\n"
+                "• Returns are only valid for defective items.\n"
+                "• This request must be made within 12 hours of delivery.\n\n"
+                "Do you want to proceed?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child:
+                  const Text("Cancel", style: TextStyle(color: Colors.grey))),
+          TextButton(
+              onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          ReturnRequestScreen(orderId: widget.orderId),
+                    ),
+                  ),
+              child: const Text("Proceed",
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primaryColor))),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      // TODO: Call your Provider API here
+      // final success = await _provider.requestReturn(widget.orderId);
+
+      // Simulating API call for UI demonstration
+      await Future.delayed(const Duration(seconds: 1));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text("Return request submitted. Support will contact you."),
+            backgroundColor: AppTheme.successColor));
+      }
+    }
   }
 
   @override
@@ -103,11 +197,13 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   }
 
   Widget _buildBody(OrderDetailsProvider provider) {
-    if (provider.isLoading)
+    if (provider.isLoading) {
       return const Center(child: CircularProgressIndicator());
+    }
     if (provider.error != null) return Center(child: Text(provider.error!));
-    if (provider.order == null)
+    if (provider.order == null) {
       return const Center(child: Text('Order not found.'));
+    }
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -130,15 +226,18 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   }
 
   Widget _buildOrderHeader(OrderDetail order) {
+    Color headerColor = AppTheme.primaryColor;
+    if (order.status == 'cancelled') headerColor = Colors.grey;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: AppTheme.primaryColor,
+          color: headerColor,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-                color: AppTheme.primaryColor.withOpacity(0.3),
+                color: headerColor.withOpacity(0.3),
                 blurRadius: 10,
                 offset: const Offset(0, 5))
           ]),
@@ -172,36 +271,113 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
   }
 
   Widget _buildStatusStepper(String status) {
+    final lowerStatus = status.toLowerCase();
+
+    // 1. Handle Cancelled
+    if (lowerStatus == 'cancelled') {
+      return _buildCancelledStatus();
+    }
+
+    // 2. Handle Completed/Delivered (NEW: Show Banner instead of icons)
+    if (lowerStatus == 'delivered' || lowerStatus == 'completed') {
+      return _buildCompletedBanner();
+    }
+
+    // 3. Handle Active Tracking (Stepper)
     final steps = ['pending', 'processing', 'shipped', 'delivered'];
-    int activeIndex = steps.indexOf(status.toLowerCase());
-    if (activeIndex == -1 && status == 'in_transit') activeIndex = 2;
-    if (status == 'cancelled') return _buildCancelledStatus();
+    int activeIndex = steps.indexOf(lowerStatus);
+
+    // Map 'in_transit' to 'shipped' step visually if needed
+    if (activeIndex == -1 && lowerStatus == 'in_transit') activeIndex = 2;
 
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 10),
       decoration: BoxDecoration(
           color: Colors.white, borderRadius: BorderRadius.circular(12)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: List.generate(steps.length, (index) {
           final isActive = index <= activeIndex;
+          // Don't show the last 'delivered' icon in the stepper if we are not there yet
+          // (Optional: standard steppers show all steps, just greyed out. We keep it standard.)
           return Expanded(
             child: Column(
               children: [
-                Icon(_getStatusIcon(steps[index]),
-                    color: isActive ? Colors.green : Colors.grey[300],
-                    size: 24),
-                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? Colors.green.withOpacity(0.1)
+                        : Colors.grey[50],
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(_getStatusIcon(steps[index]),
+                      color: isActive ? Colors.green : Colors.grey[300],
+                      size: 20),
+                ),
+                const SizedBox(height: 8),
                 Text(steps[index].capitalize(),
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 10,
-                        color: isActive ? Colors.black : Colors.grey,
+                        color: isActive ? Colors.black87 : Colors.grey,
                         fontWeight:
                             isActive ? FontWeight.bold : FontWeight.normal))
               ],
             ),
           );
         }),
+      ),
+    );
+  }
+
+  // --- NEW: Completion Banner Widget ---
+  Widget _buildCompletedBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50, // Light green background
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green.shade100),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.check_circle,
+                color: Colors.green.shade600, size: 30),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Order Completed",
+                  style: TextStyle(
+                    color: Colors.green.shade800,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "This order has been delivered successfully. Thank you for shopping with us!",
+                  style: TextStyle(
+                    color: Colors.green.shade700,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -338,9 +514,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
               const SizedBox(height: 12),
               _row("Shipping Fee", order.shippingFee),
               const SizedBox(height: 16),
-              const Divider(
-                  color: Colors.grey,
-                  thickness: 1.0), // You can implement a custom dashed divider
+              const Divider(color: Colors.grey, thickness: 1.0),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -370,57 +544,194 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
     );
   }
 
+  // --- UPDATED BOTTOM BAR ---
   Widget? _buildBottomBar(BuildContext context, OrderDetailsProvider provider) {
     if (provider.order == null) return null;
     final status = provider.order!.status.toLowerCase();
     final payment = provider.order!.paymentStatus.toLowerCase();
 
-    // 1. RE-ORDER (Cancelled)
+    // 1. CANCELLED / RE-ORDER
     if (status == 'cancelled') {
-      return _bottomBtn(
-        label: "Re-order Items",
-        icon: Icons.refresh,
-        color: Colors.black87,
-        onPressed: () => _handleReorder(context, provider.order!),
+      return _buildBottomContainer(
+        child: _bottomBtn(
+          label: "Re-order Items",
+          icon: Icons.refresh,
+          color: Colors.black87,
+          onPressed: () => _handleReorder(context, provider.order!),
+        ),
       );
     }
 
-    // 2. PAY NOW (Pending)
-    if (payment == 'pending_payment') {
-      return _bottomBtn(
-        label: "Complete Payment",
-        icon: Icons.lock,
-        color: AppTheme.primaryColor,
-        isLoading: provider.isRetryingPayment,
-        onPressed: () => _handleRetryPayment(context),
+    // 2. PAY NOW / CANCEL (Unpaid)
+    if (payment == 'pending_payment' || payment == 'unpaid') {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -5),
+            )
+          ],
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: provider.isRetryingPayment
+                      ? null
+                      : () => _handleRetryPayment(context),
+                  icon: provider.isRetryingPayment
+                      ? const SizedBox()
+                      : const Icon(Icons.lock, color: Colors.white),
+                  label: provider.isRetryingPayment
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Text("Complete Payment",
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _handleCancelOrder(context),
+                  icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                  label: const Text("Cancel Order",
+                      style: TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
-    // 3. CONFIRM DELIVERY (Shipped)
+    // 3. CONFIRM DELIVERY
     if (['shipped', 'in_transit'].contains(status)) {
-      return _bottomBtn(
-        label: "Confirm Received",
-        icon: Icons.check_circle_outline,
-        color: Colors.green[700]!,
-        isLoading: provider.isConfirming,
-        onPressed: () => provider.confirmDelivery(),
+      return _buildBottomContainer(
+        child: _bottomBtn(
+          label: "Confirm Received",
+          icon: Icons.check_circle_outline,
+          color: Colors.green[700]!,
+          isLoading: provider.isConfirming,
+          onPressed: () => provider.confirmDelivery(),
+        ),
       );
     }
 
-    // 4. REVIEW (Delivered)
+    // 4. REVIEW + RETURN (Delivered)
     if (status == 'delivered') {
-      return _bottomBtn(
-        label: "Write Review",
-        icon: Icons.star_rate_rounded,
-        color: Colors.amber[800]!,
-        onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => AddReviewScreen(order: provider.order!))),
+      // 12-Hour Return Logic
+      // IMPORTANT: Ensure your backend sends 'updated_at' or 'delivered_at' in the Order model.
+      // If not available, this logic defaults to "Always Allow" or "Never Allow" depending on default.
+
+      // Fallback: Use current time if date is missing (Safe Default)
+      final deliveryDate =
+          DateTime.tryParse(provider.order!.date) ?? DateTime.now();
+      // NOTE: Replace 'provider.order!.date' with 'provider.order!.updatedAt' if available from backend.
+
+      final hoursSinceDelivery =
+          DateTime.now().difference(deliveryDate).inHours;
+      final canReturn = hoursSinceDelivery <= 12;
+
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -5),
+            )
+          ],
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Primary Action: Review
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              AddReviewScreen(order: provider.order!))),
+                  icon:
+                      const Icon(Icons.star_rate_rounded, color: Colors.white),
+                  label: const Text("Write Review",
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber[800],
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+
+              // Secondary Action: Return (Only if within 12h logic holds)
+              if (canReturn) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => _handleReturnRequest(context),
+                    icon:
+                        const Icon(Icons.assignment_return_outlined, size: 18),
+                    label: const Text("Request Return (Defective Item)",
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey[700],
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ]
+            ],
+          ),
+        ),
       );
     }
 
     return null;
+  }
+
+  Widget _buildBottomContainer({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: Colors.white,
+      child: SafeArea(child: child),
+    );
   }
 
   Widget _bottomBtn(
@@ -429,29 +740,26 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen> {
       required Color color,
       required VoidCallback onPressed,
       bool isLoading = false}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.white,
-      child: SafeArea(
-        child: ElevatedButton.icon(
-          onPressed: isLoading ? null : onPressed,
-          icon: isLoading ? const SizedBox() : Icon(icon, color: Colors.white),
-          label: isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2))
-              : Text(label,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
-          style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: 0),
-        ),
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: isLoading ? null : onPressed,
+        icon: isLoading ? const SizedBox() : Icon(icon, color: Colors.white),
+        label: isLoading
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2))
+            : Text(label,
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold)),
+        style: ElevatedButton.styleFrom(
+            backgroundColor: color,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 0),
       ),
     );
   }
