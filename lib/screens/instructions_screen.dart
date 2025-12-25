@@ -21,7 +21,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
 
   Future<void> _submitCreateShop() async {
     if (!_agreedToTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('You must agree to the terms and conditions to proceed.'),
         backgroundColor: Colors.orange,
       ));
@@ -45,13 +45,13 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       authProvider.updateUserToSeller(result['data']['shop']);
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Congratulations! Your shop is now live.'),
         backgroundColor: Colors.green,
       ));
 
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => SellerDashboardScreen()),
+        MaterialPageRoute(builder: (_) => const SellerDashboardScreen()),
         (route) => false,
       );
     } else {
@@ -67,7 +67,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Seller Onboarding (Step 2 of 2)'),
+        title: const Text('Seller Onboarding (Step 2 of 2)'),
         backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
       ),
@@ -78,13 +78,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
           children: [
             _buildHeader(),
             const SizedBox(height: 24),
-            _buildInstructionItem('1', 'Notification of Sale',
+            _buildInstructionItem('1', 'Shop Verification & Uploads',
+                'After creating your shop, you cannot start uploading products immediately. The Kasuwa team will reach out to verify your shop details first. Once verified, you can start listing your items.'),
+            _buildInstructionItem('2', 'Immediate Payment',
+                'Good news! You will be paid as soon as the user successfully pays for the product. No long waiting periods.'),
+            _buildInstructionItem('3', 'Return Policy & Refunds',
+                'Users have a 12-hour window from delivery to initiate a return. If a return request is verified and valid, the user will be refunded, and the item will be returned to your shop.'),
+            _buildInstructionItem('4', 'Notification of Sale',
                 'If a user selects an item in your shop and pays for it, you will be notified immediately.'),
-            _buildInstructionItem('2', 'Item Pickup',
+            _buildInstructionItem('5', 'Item Pickup',
                 'A Kasuwa admin or agent will contact you to arrange pickup of the item for delivery to the customer.'),
-            _buildInstructionItem('3', 'Payment Disbursement',
-                'After a user has successfully received their product and the return window has closed, you will be reimbursed.'),
-            _buildInstructionItem('4', 'Service Charge',
+            _buildInstructionItem('6', 'Service Charge',
                 'Kasuwa will charge a 5% commission on the total value of every successful transaction.'),
             const SizedBox(height: 32),
             _buildTermsCheckbox(),
@@ -102,7 +106,11 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                     const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
                   : const Text('Agree & Create My Shop',
                       style: TextStyle(color: Colors.white)),
             ),
@@ -115,7 +123,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
   Widget _buildHeader() {
     return Column(
       children: [
-        Icon(Icons.info_outline, size: 60, color: AppTheme.primaryColor),
+        const Icon(Icons.info_outline, size: 60, color: AppTheme.primaryColor),
         const SizedBox(height: 16),
         Text(
           'How Selling Works',
@@ -149,7 +157,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
             radius: 14,
             backgroundColor: AppTheme.primaryColor,
             child: Text(number,
-                style: TextStyle(
+                style: const TextStyle(
                     color: Colors.white, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(width: 16),
@@ -158,8 +166,8 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 4),
                 Text(description,
                     style: TextStyle(color: Colors.grey[800], height: 1.4)),
@@ -183,7 +191,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
           },
           activeColor: AppTheme.primaryColor,
         ),
-        Expanded(
+        const Expanded(
           child: Text(
             'I have read, understood, and agree to the terms and conditions.',
             style: TextStyle(fontSize: 14),

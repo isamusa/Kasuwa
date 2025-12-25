@@ -11,13 +11,16 @@ class AuthProvider with ChangeNotifier {
   Map<String, dynamic>? _user;
   bool _isAuthenticated = false;
   bool _isInitializing = true;
+
   bool _isLoading = false;
+  bool get isLoading => _isLoading;
 
   bool get isInitializing => _isInitializing;
   bool get isAuthenticated => _isAuthenticated;
   Map<String, dynamic>? get user => _user;
   String? get token => _token;
-
+  String? _errorMessage;
+  String? get errorMessage => _errorMessage;
   AuthProvider() {
     _tryAutoLogin();
   }
@@ -107,6 +110,26 @@ class AuthProvider with ChangeNotifier {
     if (_user != null) {
       _user!['role'] = 'seller';
       notifyListeners();
+    }
+  }
+
+  Future<bool> changePassword(
+      String currentPassword, String newPassword) async {
+    _isLoading = true;
+    notifyListeners();
+
+    final result =
+        await _authService.changePassword(currentPassword, newPassword);
+
+    _isLoading = false;
+    notifyListeners();
+
+    if (result['success']) {
+      return true;
+    } else {
+      // You can store the error message in a variable if you want to display it in the UI
+      _errorMessage = result['message'];
+      return false;
     }
   }
 

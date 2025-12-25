@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:kasuwa/screens/opay_payment_screen.dart';
 import 'package:kasuwa/screens/add_address_screen.dart';
-import 'package:kasuwa/screens/my_orders_screen.dart';
 import 'package:kasuwa/providers/cart_provider.dart';
 import 'package:kasuwa/providers/checkout_provider.dart';
 import 'package:provider/provider.dart';
@@ -170,19 +169,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     setState(() => _isProcessing = true);
 
-    // 1. Create the order on the backend
     final result = await checkoutProvider
         .placeOrderAndInitializePayment(widget.itemsToCheckout);
 
     if (!mounted) return;
 
     if (result['success']) {
-      // 2. CRITICAL FIX: Clear the local cart immediately.
-      // The backend has already converted these items into an Order.
-      // Clearing this prevents "Ghost Orders" if the user navigates back.
       Provider.of<CartProvider>(context, listen: false).clearCart();
 
-      // 3. Navigate to Payment Gateway
       final paymentCompleted = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
@@ -193,19 +187,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (!mounted) return;
 
       if (paymentCompleted == true) {
-        // 4a. Success Case
         Provider.of<CheckoutProvider>(context, listen: false)
             .resetOrderTracking();
         Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const PaymentSuccessScreen()));
       } else {
-        // 4b. Failure/Cancel Case
-        // Navigate to the Failed screen instead of staying on Checkout
         Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const PaymentFailedScreen()));
       }
     } else {
-      // API Error (Order creation failed)
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Error: ${result['message']}'),
           backgroundColor: Colors.red));
@@ -253,7 +243,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     const SizedBox(height: 24),
                     _buildSummaryCard(currencyFormatter, _subtotal, shippingFee,
                         totalAmount, checkoutProvider),
-                    const SizedBox(height: 100), // Space for bottom bar
+                    const SizedBox(height: 100),
                   ]),
                 ),
               ),
@@ -279,8 +269,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildAddressCard(BuildContext context, CheckoutProvider provider) {
-    if (provider.isLoading) {
-      return ShimmerPlaceholder(height: 100);
+    // Only show shimmer if initially loading addresses, not during recalc unless you want
+    if (provider.isLoading && provider.addresses.isEmpty) {
+      return const ShimmerPlaceholder(height: 100);
     }
 
     if (provider.selectedAddress == null) {
@@ -360,10 +351,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           TextButton(
                             onPressed: () => _changeAddress(context, provider),
                             style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(0, 0),
-                                tapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap),
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 0),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
                             child: const Text("CHANGE",
                                 style: TextStyle(
                                     fontSize: 12, fontWeight: FontWeight.bold)),
@@ -405,7 +396,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
         leading: Image.asset('assets/images/opay_logo.png',
-            width: 40, height: 40), // Ensure asset exists
+            width: 40,
+            height: 40,
+            errorBuilder: (c, e, s) =>
+                const Icon(Icons.payment, size: 40, color: Colors.green)),
         title: const Text("OPay Payment",
             style: TextStyle(fontWeight: FontWeight.bold)),
         subtitle: const Text("Secure checkout via OPay gateway"),
@@ -496,19 +490,61 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         children: [
           _summaryRow("Subtotal", formatter.format(subtotal)),
           const SizedBox(height: 12),
-          _summaryRow("Shipping", formatter.format(shipping)),
+          // Check if provider is loading (recalculating fee)
+          provider.isLoading
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Shipping",
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.normal,
+                            color: Colors.grey[600])),
+                    const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppTheme.primaryColor,
+                      ),
+                    )
+                  ],
+                )
+              : _summaryRow("Shipping", formatter.format(shipping)),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Divider(),
           ),
-          _summaryRow("Total", formatter.format(total), isTotal: true),
+          provider.isLoading
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("Total",
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black)),
+                    const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppTheme.primaryColor,
+                      ),
+                    )
+                  ],
+                )
+              : _summaryRow("Total", formatter.format(total), isTotal: true),
           const SizedBox(height: 16),
           Row(
             children: [
               Icon(Icons.local_shipping_outlined,
                   size: 16, color: Colors.green[700]),
               const SizedBox(width: 8),
-              Text("Est. Delivery: ${provider.estimatedDelivery}",
+              Text(
+                  provider.isLoading
+                      ? "Calculating delivery..."
+                      : "Est. Delivery: ${provider.estimatedDelivery}",
                   style: TextStyle(
                       color: Colors.green[700],
                       fontSize: 13,
@@ -554,9 +590,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
       child: SafeArea(
         child: ElevatedButton(
-          onPressed: _isProcessing ? null : () => _proceedToPayment(context),
+          // Disable button if processing OR loading shipping fee
+          onPressed: (_isProcessing || provider.isLoading)
+              ? null
+              : () => _proceedToPayment(context),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.primaryColor,
+            disabledBackgroundColor:
+                Colors.grey[300], // Visual feedback for disabled state
             padding: const EdgeInsets.symmetric(vertical: 18),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -572,12 +613,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               : Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text("Pay ",
+                    Text("Pay ",
                         style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600)),
-                    Text(formatter.format(total),
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w900)),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: (_isProcessing || provider.isLoading)
+                                ? Colors.grey[600]
+                                : AppTheme.surfaceColor)),
+                    if (!provider.isLoading) // Only show amount if ready
+                      Text(formatter.format(total),
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: (_isProcessing || provider.isLoading)
+                                  ? Colors.grey[600]
+                                  : AppTheme.surfaceColor)),
                   ],
                 ),
         ),
@@ -586,7 +636,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 }
 
-// Simple Placeholder for Loading
 class ShimmerPlaceholder extends StatelessWidget {
   final double height;
   const ShimmerPlaceholder({super.key, required this.height});

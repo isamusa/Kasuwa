@@ -17,6 +17,7 @@ import 'package:kasuwa/theme/app_theme.dart';
 import 'package:kasuwa/screens/help_center_screen.dart';
 import 'package:kasuwa/screens/security_screen.dart';
 import 'package:kasuwa/screens/language_screen.dart';
+import 'package:kasuwa/screens/notifications_screen.dart'; // <--- Make sure to create this file
 
 // Helper for image URLs
 String storageUrl(String? path) {
@@ -30,7 +31,7 @@ String storageUrl(String? path) {
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  // --- NEW: Logout Confirmation Dialog ---
+  // --- Logout Confirmation Dialog ---
   void _showLogoutDialog(BuildContext context, AuthProvider auth) {
     showDialog(
       context: context,
@@ -48,7 +49,6 @@ class ProfileScreen extends StatelessWidget {
               Navigator.pop(ctx); // Close dialog
               await auth.logout(); // Perform logout logic
               if (context.mounted) {
-                // Navigate to Login and remove all previous routes
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const LoginScreen()),
                   (route) => false,
@@ -66,7 +66,6 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Back Gesture Handling: Ensure back button goes to Home
     return WillPopScope(
       onWillPop: () async {
         Navigator.pushAndRemoveUntil(
@@ -80,7 +79,6 @@ class ProfileScreen extends StatelessWidget {
         builder: (context, auth, _) {
           final user = auth.user;
           if (user == null) {
-            // If user state is lost, force login
             WidgetsBinding.instance.addPostFrameCallback((_) {
               Navigator.of(context).pushReplacement(
                   MaterialPageRoute(builder: (_) => const LoginScreen()));
@@ -163,7 +161,7 @@ class ProfileScreen extends StatelessWidget {
                                           shape: BoxShape.circle,
                                           border: Border.all(
                                               color: Colors.white, width: 2),
-                                          boxShadow: [
+                                          boxShadow: const [
                                             BoxShadow(
                                                 color: Color.fromRGBO(
                                                     0, 0, 0, 0.2),
@@ -228,14 +226,15 @@ class ProfileScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         Container(
                           decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Color.fromRGBO(0, 0, 0, 0.02),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 2))
-                              ]),
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: const [
+                              BoxShadow(
+                                  color: Color.fromRGBO(0, 0, 0, 0.02),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 2))
+                            ],
+                          ),
                           child: Column(
                             children: [
                               _buildMenuItem(
@@ -281,16 +280,31 @@ class ProfileScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         Container(
                           decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Color.fromRGBO(0, 0, 0, 0.02),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 2))
-                              ]),
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: const [
+                              BoxShadow(
+                                  color: Color.fromRGBO(0, 0, 0, 0.02),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 2))
+                            ],
+                          ),
                           child: Column(
                             children: [
+                              _buildMenuItem(
+                                  context,
+                                  "Notifications",
+                                  Icons.notifications_outlined,
+                                  Colors.redAccent, () {
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const NotificationsScreen()));
+                              }),
+                              _buildDivider(),
+                              // -------------------------------
+
                               _buildMenuItem(context, "Security",
                                   Icons.lock_outline, Colors.teal, () {
                                 Navigator.push(
@@ -323,14 +337,15 @@ class ProfileScreen extends StatelessWidget {
 
                         const SizedBox(height: 30),
 
-                        // 1. Updated Logout Logic with Confirmation
+                        // Logout Logic
                         SizedBox(
                           width: double.infinity,
                           child: TextButton(
                             onPressed: () => _showLogoutDialog(context, auth),
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: Color.fromRGBO(255, 0, 0, 0.08),
+                              backgroundColor:
+                                  const Color.fromRGBO(255, 0, 0, 0.08),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12)),
                             ),
@@ -368,11 +383,11 @@ class ProfileScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.black87,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
               color: Color.fromRGBO(0, 0, 0, 0.2),
               blurRadius: 10,
-              offset: const Offset(0, 5))
+              offset: Offset(0, 5))
         ],
       ),
       child: Row(
@@ -381,13 +396,13 @@ class ProfileScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+              children: const [
                 Text("Kasuwa Wallet",
                     style: TextStyle(
                         color: Color.fromRGBO(255, 255, 255, 0.6),
                         fontSize: 12)),
-                const SizedBox(height: 4),
-                const Text("₦ 0.00",
+                SizedBox(height: 4),
+                Text("₦ 0.00",
                     style: TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -400,13 +415,13 @@ class ProfileScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
+              children: const [
                 Text("Points",
                     style: TextStyle(
                         color: Color.fromRGBO(255, 255, 255, 0.6),
                         fontSize: 12)),
-                const SizedBox(height: 4),
-                const Row(
+                SizedBox(height: 4),
+                Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     Icon(Icons.stars, color: Colors.amber, size: 16),
@@ -437,11 +452,11 @@ class ProfileScreen extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
               color: Color.fromRGBO(128, 128, 128, 0.05),
               blurRadius: 10,
-              offset: const Offset(0, 4))
+              offset: Offset(0, 4))
         ],
       ),
       child: Column(
@@ -571,7 +586,7 @@ class ProfileScreen extends StatelessWidget {
         ),
         child: Stack(
           children: [
-            Positioned(
+            const Positioned(
                 right: -20,
                 top: -20,
                 child: Icon(Icons.storefront,

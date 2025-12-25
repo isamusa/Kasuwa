@@ -1,15 +1,27 @@
 import 'package:intl/intl.dart';
 import 'package:kasuwa/config/app_config.dart'; // Import AppConfig
 
-// --- ADD THIS HELPER ---
 String storageUrl(String? path) {
-  if (path == null || path.isEmpty) return 'https://placehold.co/100';
+  // FIX: Added '.png' here.
+  // Flutter cannot render the default SVG from placehold.co, so we force PNG.
+  if (path == null || path.isEmpty) return 'https://placehold.co/100.png';
+
   if (path.startsWith('http') || path.startsWith('https')) {
     return path;
   }
-  return '${AppConfig.baseUrl}/storage/$path';
-}
-// -----------------------
+
+  // Clean up the Base URL to ensure we don't duplicate '/api'
+  // (Assuming your AppConfig.baseUrl might include /api)
+  String baseUrl = AppConfig.baseUrl.replaceAll('/api', '');
+  if (baseUrl.endsWith('/')) {
+    baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+  }
+
+  // Clean up the path
+  String cleanPath = path.startsWith('/') ? path.substring(1) : path;
+
+  return '$baseUrl/storage/$cleanPath';
+} // -----------------------
 
 class SellerOrder {
   final int id;

@@ -65,7 +65,6 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
               tabs: const [
                 Tab(text: "Active"),
                 Tab(text: "Completed"),
-                Tab(text: "Cancelled"),
               ],
             ),
           ),

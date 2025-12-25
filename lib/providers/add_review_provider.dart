@@ -8,6 +8,8 @@ class ReviewInput {
   final int productId;
   final String productName;
   final String imageUrl;
+  final int shopId;
+  final String shopName;
   int rating;
   TextEditingController commentController;
 
@@ -15,6 +17,8 @@ class ReviewInput {
     required this.productId,
     required this.productName,
     required this.imageUrl,
+    this.shopId = 0,
+    this.shopName = '',
     this.rating = 5, // Default to a 5-star rating
   }) : commentController = TextEditingController();
 }
@@ -27,20 +31,40 @@ class AddReviewProvider with ChangeNotifier {
   late List<ReviewInput> reviewInputs;
   bool _isSubmitting = false;
 
+  // Shop Rating State
+  final Map<int, int> _shopRatings = {}; // {shopId: rating}
+
   bool get isSubmitting => _isSubmitting;
 
   AddReviewProvider(this._auth, this._order) {
-    // Initialize the review inputs from the order items
+    _initializeData();
+  }
+
+  void _initializeData() {
+    // 1. Initialize Product Inputs
     reviewInputs = _order.items
         .map((item) => ReviewInput(
               productId: item.productId,
               productName: item.productName,
-              imageUrl: item.imageUrl,
+              imageUrl: item
+                  .imageUrl, // Ensure this matches your OrderDetailItem field name
+              shopId: item.shopId, // Passing the shopId from the item
+              shopName: item.shopName, // Passing the shopName from the item
             ))
         .toList();
+
+    // 2. Initialize Shop Inputs (Unique shops only)
   }
 
-  void setRating(int productId, int rating) {
+  // --- Getters ---
+  double getShopRating(int shopId) => _shopRatings[shopId]?.toDouble() ?? 0.0;
+
+  void setShopRating(int shopId, int rating) {
+    _shopRatings[shopId] = rating;
+    notifyListeners();
+  }
+
+  void setProductRating(int productId, int rating) {
     final index = reviewInputs.indexWhere((r) => r.productId == productId);
     if (index != -1) {
       reviewInputs[index].rating = rating;
@@ -48,6 +72,7 @@ class AddReviewProvider with ChangeNotifier {
     }
   }
 
+  // --- Submission ---
   Future<Map<String, dynamic>> submitReviews() async {
     final token = _auth.token;
     if (token == null) {
@@ -57,31 +82,53 @@ class AddReviewProvider with ChangeNotifier {
     _isSubmitting = true;
     notifyListeners();
 
-    // Prepare the payload for the API from the user's input
-    final reviewsPayload = reviewInputs
-        .map((input) => {
-              'product_id': input.productId,
-              'rating': input.rating,
-              'comment': input.commentController.text,
-            })
-        .toList();
+    try {
+      // 1. Product Reviews (Unchanged)
+      final productReviews = reviewInputs
+          .map((input) => {
+                'product_id': input.productId,
+                'rating': input.rating,
+                'comment': input.commentController.text,
+              })
+          .toList();
 
-    final result = await _reviewService.submitReviews(
-      orderId: _order.id,
-      reviews: reviewsPayload,
-      token: token,
-    );
+      // 2. Shop Reviews (RATING ONLY)
+      final shopReviews = _shopRatings.entries
+          .map((entry) {
+            return {
+              'shop_id': entry.key,
+              'rating': entry.value,
+              // No comment sent for shops
+            };
+          })
+          .where((r) => (r['rating'] as int) > 0)
+          .toList();
 
-    _isSubmitting = false;
-    notifyListeners();
-    return result;
+      final result = await _reviewService.submitReviews(
+        orderId: _order.id,
+        reviews: productReviews,
+        shopReviews: shopReviews,
+        token: token,
+      );
+
+      _isSubmitting = false;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      _isSubmitting = false;
+      notifyListeners();
+      return {'success': false, 'message': 'An error occurred: $e'};
+    }
   }
 
   @override
   void dispose() {
+    // Dispose product controllers
     for (var input in reviewInputs) {
       input.commentController.dispose();
     }
+    // Dispose shop controllers
+
     super.dispose();
   }
 }

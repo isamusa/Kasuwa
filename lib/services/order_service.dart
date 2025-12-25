@@ -6,26 +6,24 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 class OrderService {
   static const String _cacheKey = 'ordersCache';
+  static const Duration _timeout = Duration(seconds: 20);
 
   Future<List<Map<String, dynamic>>> getOrders(
       {required String? token, bool forceRefresh = false}) async {
     final prefs = await SharedPreferences.getInstance();
-    final connectivityResult = await (Connectivity().checkConnectivity());
-    final isOnline = connectivityResult != ConnectivityResult.none;
 
-    if (!isOnline) {
-      print("Offline: Loading orders from cache.");
+    // Check internet
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    if (connectivityResult == ConnectivityResult.none) {
       return _loadFromCache();
     }
 
-    if (token == null) {
-      print("Online but not authenticated. Returning empty list.");
-      return [];
-    }
+    if (token == null) return [];
 
     if (!forceRefresh) {
       final cachedData = prefs.getString(_cacheKey);
       if (cachedData != null) {
+        // Fetch in background to update cache
         _fetchAndCacheOrders(prefs, token);
         return _parseOrders(cachedData);
       }
@@ -37,16 +35,21 @@ class OrderService {
   Future<List<Map<String, dynamic>>> _fetchAndCacheOrders(
       SharedPreferences prefs, String token) async {
     final url = Uri.parse('${AppConfig.apiBaseUrl}/orders');
-    final response = await http.get(url, headers: {
-      'Authorization': 'Bearer $token',
-      'Accept': 'application/json'
-    });
+    try {
+      final response = await http.get(url, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json'
+      }).timeout(_timeout);
 
-    if (response.statusCode == 200) {
-      await prefs.setString(_cacheKey, response.body);
-      return _parseOrders(response.body);
-    } else {
-      throw Exception('Failed to load orders from network');
+      if (response.statusCode == 200) {
+        await prefs.setString(_cacheKey, response.body);
+        return _parseOrders(response.body);
+      } else {
+        throw Exception('Failed to load orders');
+      }
+    } catch (e) {
+      // If network fails, try cache
+      return _loadFromCache();
     }
   }
 
@@ -58,20 +61,27 @@ class OrderService {
   Future<List<Map<String, dynamic>>> _loadFromCache() async {
     final prefs = await SharedPreferences.getInstance();
     final cachedData = prefs.getString(_cacheKey);
-    if (cachedData != null) {
-      return _parseOrders(cachedData);
-    }
-    return [];
+    return cachedData != null ? _parseOrders(cachedData) : [];
   }
 
-  Future<bool> createOrder({
+  /// Returns the Order ID if successful, or null if failed.
+  Future<int?> createOrder({
     required int shippingAddressId,
     required List<Map<String, dynamic>> items,
-    required String? token,
+    required String token,
+    double? shippingFee, // Added shippingFee parameter
   }) async {
-    if (token == null) return false;
-
     final url = Uri.parse('${AppConfig.apiBaseUrl}/orders');
+
+    final Map<String, dynamic> body = {
+      'shipping_address_id': shippingAddressId,
+      'items': items,
+    };
+
+    if (shippingFee != null) {
+      body['shipping_fee'] = shippingFee;
+    }
+
     try {
       final response = await http.post(
         url,
@@ -80,15 +90,19 @@ class OrderService {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        body: json.encode({
-          'shipping_address_id': shippingAddressId,
-          'items': items,
-        }),
+        body: json.encode(body),
       );
-      return response.statusCode == 201;
+
+      if (response.statusCode == 201) {
+        final data = json.decode(response.body);
+        return data['order']['id'];
+      } else {
+        print("Create Order Error: ${response.statusCode} - ${response.body}");
+        return null;
+      }
     } catch (e) {
-      print("Create Order Error: $e");
-      return false;
+      print("Create Order Exception: $e");
+      return null;
     }
   }
 }

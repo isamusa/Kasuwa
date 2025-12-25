@@ -5,8 +5,9 @@ import 'package:kasuwa/config/app_config.dart';
 class ReviewService {
   Future<Map<String, dynamic>> submitReviews({
     required int orderId,
-    required List<Map<String, dynamic>> reviews,
+    required List<Map<String, dynamic>> reviews, // Product reviews
     required String token,
+    required List<Map<String, dynamic>> shopReviews, // Shop reviews
   }) async {
     final url = Uri.parse('${AppConfig.apiBaseUrl}/reviews/order');
     try {
@@ -19,12 +20,15 @@ class ReviewService {
         },
         body: json.encode({
           'order_id': orderId,
-          'reviews': reviews,
+          'reviews': reviews, // Product reviews
+          'shops':
+              shopReviews, // <--- ADD THIS LINE (Sends shop reviews to API)
         }),
       );
 
       final responseData = json.decode(response.body);
-      if (response.statusCode == 201) {
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
         return {'success': true, 'message': responseData['message']};
       } else {
         return {
@@ -35,7 +39,7 @@ class ReviewService {
     } catch (e) {
       return {
         'success': false,
-        'message': 'An error occurred. Please try again.'
+        'message': 'An error occurred. Please try again: $e'
       };
     }
   }

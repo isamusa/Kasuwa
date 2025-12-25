@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:kasuwa/providers/auth_provider.dart';
 import 'package:kasuwa/theme/app_theme.dart';
 
 class SecurityScreen extends StatefulWidget {
@@ -13,7 +15,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
   bool _twoFactorEnabled = false;
   final _formKey = GlobalKey<FormState>();
 
-  // Text Controllers for password change
+  // Text Controllers
   final _currentPassController = TextEditingController();
   final _newPassController = TextEditingController();
   final _confirmPassController = TextEditingController();
@@ -30,19 +32,44 @@ class _SecurityScreenState extends State<SecurityScreen> {
     super.dispose();
   }
 
-  void _handleChangePassword() {
-    if (_formKey.currentState!.validate()) {
-      // TODO: Implement API call to change password
+  Future<void> _handleChangePassword(AuthProvider authProvider) async {
+    if (!_formKey.currentState!.validate()) return;
+
+    // Call the provider logic
+    final success = await authProvider.changePassword(
+      _currentPassController.text,
+      _newPassController.text,
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      // 1. Show Success Message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Password updated successfully!"),
           backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
         ),
       );
-      // Clear fields
+
+      // 2. Clear fields
       _currentPassController.clear();
       _newPassController.clear();
       _confirmPassController.clear();
+
+      // 3. Unfocus keyboard
+      FocusManager.instance.primaryFocus?.unfocus();
+    } else {
+      // 4. Show Error Message from Backend
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text(authProvider.errorMessage ?? "Failed to update password"),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -60,7 +87,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
           ),
           TextButton(
             onPressed: () {
-              // TODO: Implement delete account logic
+              // delete account logic not yet implemented
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text("Account deletion request sent.")),
@@ -75,6 +102,9 @@ class _SecurityScreenState extends State<SecurityScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Access the provider
+    final authProvider = Provider.of<AuthProvider>(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
@@ -83,6 +113,10 @@ class _SecurityScreenState extends State<SecurityScreen> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -169,20 +203,33 @@ class _SecurityScreenState extends State<SecurityScreen> {
                       },
                     ),
                     const SizedBox(height: 24),
+
+                    // Button with Loading State
                     SizedBox(
                       width: double.infinity,
+                      height: 50,
                       child: ElevatedButton(
-                        onPressed: _handleChangePassword,
+                        onPressed: authProvider.isLoading
+                            ? null
+                            : () => _handleChangePassword(authProvider),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryColor,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
+                              borderRadius: BorderRadius.circular(12)),
+                          disabledBackgroundColor:
+                              AppTheme.primaryColor.withOpacity(0.6),
                         ),
-                        child: const Text("Update Password",
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white)),
+                        child: authProvider.isLoading
+                            ? const SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2.5))
+                            : const Text("Update Password",
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    fontSize: 16)),
                       ),
                     ),
                   ],
@@ -223,7 +270,15 @@ class _SecurityScreenState extends State<SecurityScreen> {
           validator ?? (val) => val!.length < 6 ? "Minimum 6 characters" : null,
       decoration: InputDecoration(
         labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        labelStyle: TextStyle(color: Colors.grey[600]),
+        filled: true,
+        fillColor: Colors.grey[50],
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: AppTheme.primaryColor, width: 1.5)),
         suffixIcon: IconButton(
           icon: Icon(obscure ? Icons.visibility_off : Icons.visibility,
               color: Colors.grey),

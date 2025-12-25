@@ -6,10 +6,10 @@ import 'package:kasuwa/config/app_config.dart';
 import 'package:kasuwa/services/order_details_service.dart';
 import 'package:kasuwa/providers/auth_provider.dart';
 import 'package:kasuwa/services/checkout_service.dart';
-import 'package:http/http.dart' as http; // Added for API calls
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-// --- Helper Function ---
+//  Helper Function
 String storageUrl(String? path) {
   if (path == null || path.isEmpty) return '';
   if (path.startsWith('http') || path.startsWith('https')) {
@@ -18,26 +18,36 @@ String storageUrl(String? path) {
   return '${AppConfig.baseUrl}/storage/$path';
 }
 
-// --- Data Models ---
+// Data Models
 class OrderDetailItem {
   final int productId;
   final String productName;
   final String imageUrl;
   final int quantity;
   final String price;
+  final int shopId;
+  final String shopName;
 
-  OrderDetailItem(
-      {required this.productId,
-      required this.productName,
-      required this.imageUrl,
-      required this.quantity,
-      required this.price});
+  OrderDetailItem({
+    required this.productId,
+    required this.productName,
+    required this.imageUrl,
+    required this.quantity,
+    required this.price,
+    this.shopId = 0,
+    this.shopName = 'Unknown Shop',
+  });
 
   factory OrderDetailItem.fromJson(Map<String, dynamic> json) {
     final product = json['product'] ?? {};
+
+    final shop = product['shop'] ?? {};
+
     final images = product['images'] as List<dynamic>?;
 
     return OrderDetailItem(
+      shopId: json['shop_id'] ?? product['shop_id'] ?? shop['id'] ?? 0,
+      shopName: json['shop_name'] ?? shop['name'] ?? 'Unknown Shop',
       productId: product['id'] ?? 0,
       productName: product['name'] ?? 'Product',
       imageUrl: images != null && images.isNotEmpty
@@ -149,7 +159,7 @@ class OrderDetail {
   }
 }
 
-// --- The Provider Class ---
+// The Provider Class
 class OrderDetailsProvider with ChangeNotifier {
   final OrderDetailsService _orderService = OrderDetailsService();
   final CheckoutService _checkoutService = CheckoutService();
@@ -288,7 +298,7 @@ class OrderDetailsProvider with ChangeNotifier {
     return success;
   }
 
-  // --- NEW: Cancel Order Method ---
+  // Cancel Order Method
   Future<bool> cancelOrder(int orderId) async {
     final token = _auth.token;
     if (token == null) return false;

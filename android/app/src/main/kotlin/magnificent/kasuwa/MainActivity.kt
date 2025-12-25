@@ -1,4 +1,4 @@
-package magnificent.kasuwa
+package com.magnificent.kasuwa
 
 import io.flutter.embedding.android.FlutterActivity
 

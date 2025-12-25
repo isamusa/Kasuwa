@@ -6,19 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-String storageUrl(String? path) {
-  if (path == null || path.isEmpty) return '';
-
-  // 1. If it's already a full URL (Cloudinary), return it as is.
-  if (path.startsWith('http') || path.startsWith('https')) {
-    return path;
-  }
-
-  // 2. If it's a legacy relative path, prepend the Render base URL.
-  return '${AppConfig.baseUrl}/storage/$path';
-}
-
-// --- Data Models (With toJson for caching) ---
+// --- Data Models ---
 class HomeProduct {
   final int id;
   final String name;
@@ -38,51 +26,48 @@ class HomeProduct {
     required this.reviewsCount,
   });
 
-  // THE FIX: This factory is now unified and more robust.
   factory HomeProduct.fromJson(Map<String, dynamic> json) {
-    String getImageUrl(Map<String, dynamic> json) {
-      if (json.containsKey('imageUrl')) {
-        return json['imageUrl']; // From cache
-      }
+    String extractImage() {
+      // 1. Check if we already cached the final URL
+      if (json['imageUrl'] != null) return json['imageUrl'];
+
+      // 2. Check API 'images' array
       final images = json['images'] as List<dynamic>?;
-      if (images != null &&
-          images.isNotEmpty &&
-          images[0]['image_url'] != null) {
-        return storageUrl(images[0]['image_url']);
+      if (images != null && images.isNotEmpty) {
+        // Handle both simple string paths and object structures
+        final firstImg = images[0];
+        if (firstImg is Map && firstImg['image_url'] != null) {
+          return AppConfig.getFullImageUrl(firstImg['image_url']);
+        }
       }
-      return 'https://placehold.co/400/purple/white?text=Kasuwa';
+      return AppConfig.getFullImageUrl(null); // Placeholder
     }
-
-    // Safely parse rating and count, checking for both API and cache key names.
-    final avgRating = double.tryParse(
-            (json['reviews_avg_rating'] ?? json['avgRating'])?.toString() ??
-                '0.0') ??
-        0.0;
-
-    final reviewsCount = (json['reviews_count'] as int?) ?? 0;
 
     return HomeProduct(
       id: json['id'],
       name: json['name'] ?? 'No Name',
-      imageUrl: getImageUrl(json),
+      imageUrl: extractImage(),
       price: double.tryParse(json['price'].toString()) ?? 0.0,
       salePrice: json['sale_price'] != null
           ? double.tryParse(json['sale_price'].toString())
           : null,
-      avgRating: avgRating,
-      reviewsCount: reviewsCount,
+      avgRating: double.tryParse(
+              (json['reviews_avg_rating'] ?? json['avgRating']).toString()) ??
+          0.0,
+      reviewsCount: int.tryParse(
+              (json['reviews_count'] ?? json['reviewsCount']).toString()) ??
+          0,
     );
   }
 
-  // THE FIX: Use consistent keys for caching.
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
-        'imageUrl': imageUrl, // Always cache the full URL
+        'imageUrl': imageUrl, // We cache the processed full URL
         'price': price,
         'sale_price': salePrice,
-        'avgRating': avgRating, // Use the model's property name
-        'reviews_count': reviewsCount,
+        'avgRating': avgRating,
+        'reviewsCount': reviewsCount,
       };
 }
 
@@ -90,8 +75,10 @@ class HomeCategory {
   final int id;
   final String name;
   final IconData icon;
+
   HomeCategory({required this.id, required this.name, required this.icon});
 
+  // Need to handle IconData serialization manually or reconstruction
   factory HomeCategory.fromJson(Map<String, dynamic> json, IconData icon) {
     return HomeCategory(id: json['id'], name: json['name'], icon: icon);
   }
@@ -113,7 +100,7 @@ class Shop {
       id: json['id'],
       name: json['name'],
       slug: json['slug'],
-      logoUrl: storageUrl(json['logo_url']),
+      logoUrl: AppConfig.getFullImageUrl(json['logo_url']),
     );
   }
 
@@ -121,7 +108,7 @@ class Shop {
       {'id': id, 'name': name, 'slug': slug, 'logo_url': logoUrl};
 }
 
-// --- The Provider Class ---
+// --- Provider ---
 class HomeProvider with ChangeNotifier {
   final HomeService _homeService = HomeService();
   static const String _productCacheKey = 'products_page_';
@@ -133,12 +120,14 @@ class HomeProvider with ChangeNotifier {
   List<HomeCategory> _categories = [];
   List<dynamic> _banners = [];
   List<Shop> _shops = [];
+
   bool _isLoading = false;
   bool _isFetchingMore = false;
   bool _hasMoreProducts = true;
   int _currentPage = 1;
   String? _error;
 
+  // Getters
   List<HomeProduct> get products => _products;
   List<HomeCategory> get categories => _categories;
   List<dynamic> get banners => _banners;
@@ -155,20 +144,16 @@ class HomeProvider with ChangeNotifier {
     if (!forceRefresh && _products.isEmpty) {
       _isLoading = true;
       notifyListeners();
-    }
-
-    await _loadDataFromCache();
-
-    if (_products.isNotEmpty) {
-      _isLoading = false;
-      notifyListeners();
+      await _loadDataFromCache(); // Load cache first for speed
+      if (_products.isNotEmpty) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
 
     final connectivityResult = await (Connectivity().checkConnectivity());
     if (connectivityResult == ConnectivityResult.none) {
-      if (_products.isEmpty) {
-        _error = "You are offline and have no cached data.";
-      }
+      if (_products.isEmpty) _error = "No internet connection.";
       _isLoading = false;
       notifyListeners();
       return;
@@ -178,27 +163,29 @@ class HomeProvider with ChangeNotifier {
       final initialData = await _homeService.getInitialData();
       final productData = await _homeService.getProducts(page: 1);
 
+      // Only clear cache if network call succeeded
       await _clearAllCache();
 
       _categories = initialData['categories'];
       _banners = initialData['banners'];
-      _shops = initialData['shops'] ?? [];
+      _shops = initialData['shops'] ??
+          []; // Ensure this key exists in Service if used
+
+      // Reset product list on refresh
       _products = productData['products'];
       _hasMoreProducts = productData['has_more'];
       _currentPage = 2;
       _error = null;
 
-      await _saveDataToCache(
+      // Update Cache
+      _saveDataToCache(
           _categoryCacheKey, _categories.map((c) => c.toJson()).toList());
-      await _saveDataToCache(_bannerCacheKey, _banners);
-      await _saveDataToCache(
-          _shopCacheKey, _shops.map((s) => s.toJson()).toList());
-      await _saveProductsToCache(1, _products);
+      _saveDataToCache(_bannerCacheKey, _banners);
+      _saveDataToCache(_shopCacheKey, _shops.map((s) => s.toJson()).toList());
+      _saveProductsToCache(1, _products);
     } catch (e) {
-      print("Network error during data fetch: $e");
-      if (_products.isEmpty) {
-        _error = "Could not connect to the server.";
-      }
+      print("Fetch Error: $e");
+      if (_products.isEmpty) _error = "Failed to load data.";
     }
 
     _isLoading = false;
@@ -213,32 +200,33 @@ class HomeProvider with ChangeNotifier {
 
     try {
       final productData = await _homeService.getProducts(page: _currentPage);
-      final fetchedProducts = productData['products'];
-      _hasMoreProducts = productData['has_more'];
+      final List<HomeProduct> newProducts = productData['products'];
 
-      _products.addAll(fetchedProducts);
-
-      await _saveProductsToCache(_currentPage, fetchedProducts);
-      if (_hasMoreProducts) {
-        _currentPage++;
+      if (newProducts.isNotEmpty) {
+        _products.addAll(newProducts);
+        _hasMoreProducts = productData['has_more'];
+        await _saveProductsToCache(_currentPage, newProducts);
+        if (_hasMoreProducts) _currentPage++;
+      } else {
+        _hasMoreProducts = false;
       }
-      _error = null;
     } catch (e) {
-      print("Error fetching more products: $e");
+      // Fail silently for pagination, user can try scrolling again
     }
 
     _isFetchingMore = false;
     notifyListeners();
   }
 
-  // --- Caching Logic ---
-
+  // --- Caching Helpers ---
   Future<void> _loadDataFromCache() async {
     final prefs = await SharedPreferences.getInstance();
     try {
-      final cachedCategories = prefs.getString(_categoryCacheKey);
-      if (cachedCategories != null) {
-        final List<dynamic> decodedData = json.decode(cachedCategories);
+      // Categories
+      final cachedCats = prefs.getString(_categoryCacheKey);
+      if (cachedCats != null) {
+        final List<dynamic> data = json.decode(cachedCats);
+        // Re-map icons manually since we don't store IconData
         final icons = [
           Icons.phone_android,
           Icons.checkroom,
@@ -248,50 +236,35 @@ class HomeProvider with ChangeNotifier {
           MdiIcons.shoeSneaker,
           MdiIcons.ring
         ];
-        _categories = decodedData
-            .asMap()
-            .entries
-            .map((entry) => HomeCategory.fromJson(
-                entry.value, icons[entry.key % icons.length]))
+        _categories = data.asMap().entries.map((e) {
+          return HomeCategory.fromJson(e.value, icons[e.key % icons.length]);
+        }).toList();
+      }
+
+      // Products
+      // We load only the first page from cache to start up quickly
+      final firstPageJson = prefs.getString('${_productCacheKey}1');
+      if (firstPageJson != null) {
+        _products = (json.decode(firstPageJson) as List)
+            .map((i) => HomeProduct.fromJson(i))
             .toList();
       }
+
+      // Banners
       final cachedBanners = prefs.getString(_bannerCacheKey);
-      if (cachedBanners != null) _banners = json.decode(cachedBanners);
-      final cachedShops = prefs.getString(_shopCacheKey);
-      if (cachedShops != null)
-        _shops = (json.decode(cachedShops) as List)
-            .map((s) => Shop.fromJson(s))
-            .toList();
-
-      final keys = prefs.getKeys();
-      final productPageKeys =
-          keys.where((key) => key.startsWith(_productCacheKey)).toList();
-      productPageKeys.sort();
-
-      List<HomeProduct> cachedProducts = [];
-      for (var key in productPageKeys) {
-        final productsJson = prefs.getString(key);
-        if (productsJson != null) {
-          cachedProducts.addAll((json.decode(productsJson) as List)
-              .map((item) => HomeProduct.fromJson(item))
-              .toList());
-        }
+      if (cachedBanners != null) {
+        _banners = json.decode(cachedBanners);
       }
-      if (cachedProducts.isNotEmpty) _products = cachedProducts;
-
-      _currentPage = productPageKeys.length + 1;
     } catch (e) {
-      print("Could not load data from cache: $e");
+      // Corrupt cache? clear it.
+      await prefs.clear();
     }
   }
 
-  Future<void> _saveProductsToCache(
-      int page, List<HomeProduct> productsToCache) async {
+  Future<void> _saveProductsToCache(int page, List<HomeProduct> items) async {
     final prefs = await SharedPreferences.getInstance();
-    final cacheKey = '$_productCacheKey$page';
-    final List<Map<String, dynamic>> encodableData =
-        productsToCache.map((p) => p.toJson()).toList();
-    await prefs.setString(cacheKey, json.encode(encodableData));
+    final data = items.map((p) => p.toJson()).toList();
+    await prefs.setString('$_productCacheKey$page', json.encode(data));
   }
 
   Future<void> _saveDataToCache(String key, dynamic data) async {
@@ -301,7 +274,13 @@ class HomeProvider with ChangeNotifier {
 
   Future<void> _clearAllCache() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    print("All cache cleared.");
+    // Be careful clearing *all* prefs if you store Auth token in prefs.
+    // Ideally, only remove keys starting with specific prefix.
+    final keys = prefs.getKeys();
+    for (String key in keys) {
+      if (key.startsWith('home') || key.startsWith('products_page')) {
+        await prefs.remove(key);
+      }
+    }
   }
 }

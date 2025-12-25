@@ -4,7 +4,7 @@ import 'package:kasuwa/providers/seller_order_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:kasuwa/theme/app_theme.dart';
-import 'package:kasuwa/config/app_config.dart'; // For storageUrl if needed
+// import 'package:kasuwa/config/app_config.dart'; // unused in this screen
 import 'package:cached_network_image/cached_network_image.dart';
 
 class SellerOrderDetailsScreen extends StatefulWidget {
@@ -120,12 +120,11 @@ class _SellerOrderDetailsScreenState extends State<SellerOrderDetailsScreen> {
 
   Widget _buildStatusDropdown() {
     const statuses = [
-      'pending',
       'processing',
       'shipped',
-      'completed',
-      'cancelled'
     ];
+    const terminalStatuses = {'completed', 'delivered'};
+    final isTerminal = terminalStatuses.contains(_currentStatus.toLowerCase());
     return Row(
       children: [
         Expanded(
@@ -136,7 +135,18 @@ class _SellerOrderDetailsScreenState extends State<SellerOrderDetailsScreen> {
                 borderRadius: BorderRadius.circular(8)),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: _currentStatus,
+                // Use `value` when current status is one of the available options,
+                // otherwise show it as a hint so the dropdown can display safely.
+                value:
+                    statuses.contains(_currentStatus) ? _currentStatus : null,
+                hint: Text(_currentStatus.toUpperCase(),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
+                // When the order is in a terminal state we disable the control
+                // and show the current status as the disabled hint.
+                disabledHint: Text(_currentStatus.toUpperCase(),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
                 isExpanded: true,
                 items: statuses
                     .map((s) => DropdownMenuItem(
@@ -146,7 +156,7 @@ class _SellerOrderDetailsScreenState extends State<SellerOrderDetailsScreen> {
                                   fontSize: 14, fontWeight: FontWeight.w600)),
                         ))
                     .toList(),
-                onChanged: _isUpdating
+                onChanged: (_isUpdating || isTerminal)
                     ? null
                     : (v) {
                         if (v != null) _updateStatus(v);
@@ -202,6 +212,8 @@ class _SellerOrderDetailsScreenState extends State<SellerOrderDetailsScreen> {
 
   Widget _buildItemRow(SellerOrderItem item, NumberFormat currency) {
     // The Model now handles the URL logic, so we use item.imageUrl directly.
+    print(item.imageUrl);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(

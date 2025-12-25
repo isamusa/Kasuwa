@@ -1,20 +1,26 @@
+import 'package:flutter/foundation.dart';
+
 class AppConfig {
-  static const String apiBaseUrl =
-      'https://kasuwa-backend-yh0v.onrender.com/api';
-
+  // live render URL
   static const String baseUrl = 'https://kasuwa-backend-yh0v.onrender.com';
-  static String getFullImageUrl(String? imagePath) {
-    if (imagePath == null || imagePath.isEmpty) {
-      return 'https://via.placeholder.com/150'; // Fallback image
+  static const String apiBaseUrl = '$baseUrl/api';
+
+  /// Centralized image URL handler
+  static String getFullImageUrl(String? path) {
+    if (path == null || path.isEmpty) {
+      return 'https://placehold.co/400/purple/white?text=Kasuwa'; // Better placeholder
     }
 
-    // 1. If it's already a full Cloudinary URL, return it directly
-    if (imagePath.startsWith('http') || imagePath.startsWith('https')) {
-      return imagePath;
+    // 1. Cloudinary or external URL
+    if (path.startsWith('http')) {
+      return path;
     }
 
-    // 2. If it's a legacy local path (from before the Cloudinary switch)
-    // You can keep pointing this to your render storage or a default placeholder
-    return 'https://kasuwa-backend-yh0v.onrender.com/storage/$imagePath';
+    // 2. Local storage path (handling active/storage/ prefix if necessary)
+    if (path.startsWith('/')) {
+      return '$baseUrl/storage$path';
+    }
+
+    return '$baseUrl/storage/$path';
   }
 }

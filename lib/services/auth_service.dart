@@ -110,6 +110,62 @@ class AuthService {
     }
   }
 
+  Future<Map<String, dynamic>> verifyOtp(String email, String otp) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConfig.apiBaseUrl}/verify-otp'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: jsonEncode({'email': email, 'otp': otp}),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': data['message']};
+      } else {
+        return {'success': false, 'message': data['message'] ?? 'Invalid OTP'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> changePassword(
+      String currentPassword, String newPassword) async {
+    try {
+      final token = await getToken(); // Get stored Sanctum token
+      final response = await http.post(
+        Uri.parse('${AppConfig.apiBaseUrl}/change-password'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'current_password': currentPassword,
+          'new_password': newPassword,
+          'new_password_confirmation':
+              newPassword, // Send confirmation automatically
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': data['message']};
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to update'
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error'};
+    }
+  }
+
   Future<void> logout() async {
     final token = await getToken();
     if (token != null) {
@@ -179,28 +235,65 @@ class AuthService {
     required String passwordConfirmation,
     String? referralCode,
   }) async {
-    // THE FIX: Use the correct AppConfig.baseUrl
-    final response = await http.post(
-      Uri.parse('${AppConfig.apiBaseUrl}/register'),
-      headers: {'Accept': 'application/json'},
-      body: {
-        'name': name,
-        'email': email,
-        'password': password,
-        'password_confirmation': passwordConfirmation,
-        'referral_code': referralCode,
-      },
-    );
+    try {
+      final response = await http.post(
+        Uri.parse('${AppConfig.apiBaseUrl}/register'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'name': name,
+          'email': email,
+          'password': password,
+          'password_confirmation': passwordConfirmation,
+          'referral_code': referralCode,
+        }),
+      );
 
-    final data = json.decode(response.body);
+      final data = jsonDecode(response.body);
 
-    if (response.statusCode == 201) {
-      return {'success': true, 'data': data};
-    } else {
+      // SUCCESS
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return {'success': true, 'message': 'Registration successful'};
+      }
+
+      // VALIDATION ERROR (422)
+      else if (response.statusCode == 422) {
+        String finalError =
+            "The email address has already been registerd. Try forgot password instead.";
+
+        // 1. Check if there are detailed 'errors' (Standard Laravel format)
+        if (data['errors'] != null && data['errors'] is Map) {
+          final errorsMap = data['errors'] as Map<String, dynamic>;
+
+          if (errorsMap.isNotEmpty) {
+            // Get the list of errors for the first field that failed (e.g., 'email')
+            final firstFieldErrors = errorsMap.values.first;
+
+            // Check if it's a list and has content
+            if (firstFieldErrors is List && firstFieldErrors.isNotEmpty) {
+              finalError = firstFieldErrors[
+                  0]; // e.g., "The email has already been taken."
+            }
+          }
+        }
+        // 2. Fallback: If no 'errors' object, use the top-level message
+        else if (data['message'] != null) {
+          finalError = data['message'];
+        }
+
+        return {'success': false, 'message': finalError};
+      }
+
+      // SERVER ERROR
+      else {
+        return {'success': false, 'message': data['message'] ?? 'Server Error'};
+      }
+    } catch (e) {
       return {
         'success': false,
-        'message': data['message'],
-        'errors': data['errors']
+        'message': 'Connection error. Please check your internet.'
       };
     }
   }
