@@ -47,10 +47,7 @@ The Solution: **Kasuwa** digitizes this trade route. It connects buyers directly
 
 | Shop Home | Product Details | user profile |
 |:---:|:---:|:---:|
-| ![Screenshot_20251221_173942](https://github.com/user-attachments/assets/d179bc1c-f433-4f8d-8f86-e087a283d8f0)
- | ![Screenshot_20251221_174027](https://github.com/user-attachments/assets/2db4cf95-1cd6-4760-b0e3-fdd102ca8eb8)
- | ![Screenshot_20251221_174250](https://github.com/user-attachments/assets/20739a1b-14e1-43e8-9f2f-0c9229de3b04)
- |
+| ![Screenshot_20251221_173942](https://github.com/user-attachments/assets/d179bc1c-f433-4f8d-8f86-e087a283d8f0) | ![Screenshot_20251221_174027](https://github.com/user-attachments/assets/2db4cf95-1cd6-4760-b0e3-fdd102ca8eb8) | ![Screenshot_20251221_174250](https://github.com/user-attachments/assets/20739a1b-14e1-43e8-9f2f-0c9229de3b04) |
 
 
 ## ⚙️ Installation & Setup
