@@ -121,7 +121,4 @@ flutter run
 
 *© 2026 Kaswa Ng Ventures. All Rights Reserved.*
 
-### 💡 **Pro-Tip for your GitHub:**
-Since you are meeting investors soon:
-1.  **Add 3 actual screenshots** to the "Screenshots" section. It makes the repo look alive.
-2.  **Pin this repository** to the top of your GitHub profile so it's the first thing they see.
+
